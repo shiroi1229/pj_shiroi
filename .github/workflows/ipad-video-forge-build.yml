@@ -1,0 +1,25 @@
+name: iPad Video Forge Build
+
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiVideoForge/**'
+      - '.github/workflows/ipad-video-forge-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios/ShiroiVideoForge
+        run: xcodegen generate
+      - name: Resolve packages
+        working-directory: ios/ShiroiVideoForge
+        run: xcodebuild -resolvePackageDependencies -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge
+      - name: Compile for iOS device (unsigned)
+        working-directory: ios/ShiroiVideoForge
+        run: xcodebuild -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
