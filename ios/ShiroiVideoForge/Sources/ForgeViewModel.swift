@@ -20,6 +20,8 @@ final class ForgeViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var capabilities = DeviceCapabilities.current()
     @Published var lastMetrics: GenerationMetrics?
+    @Published var benchmarkHistory: [BenchmarkRecord] = []
+    @Published var benchmarkCSVURL: URL?
 
     private let engine = VideoForgeEngine()
     private var generationTask: Task<Void, Never>?
@@ -28,6 +30,7 @@ final class ForgeViewModel: ObservableObject {
         Task {
             await refreshModelState()
             await refreshOutputs()
+            await refreshBenchmarks()
         }
     }
 
@@ -45,6 +48,14 @@ final class ForgeViewModel: ObservableObject {
             if outputURL == nil {
                 outputURL = outputs.first
             }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func refreshBenchmarks() async {
+        do {
+            benchmarkHistory = try await BenchmarkStore.shared.load()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -125,6 +136,12 @@ final class ForgeViewModel: ObservableObject {
                 )
                 self.refreshDeviceState()
                 await self.refreshOutputs()
+                do {
+                    self.benchmarkHistory = try await BenchmarkStore.shared.append(result.metrics)
+                    self.benchmarkCSVURL = nil
+                } catch {
+                    self.errorMessage = "Video completed, but benchmark history could not be saved: \(error.localizedDescription)"
+                }
             } catch is CancellationError {
                 self.status = "Generation cancelled"
                 self.progress = 0
@@ -151,6 +168,28 @@ final class ForgeViewModel: ObservableObject {
                 try await OutputStore.shared.delete(url)
                 if outputURL == url { outputURL = nil }
                 await refreshOutputs()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func prepareBenchmarkCSV() {
+        Task {
+            do {
+                benchmarkCSVURL = try await BenchmarkStore.shared.exportCSV()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func clearBenchmarkHistory() {
+        Task {
+            do {
+                try await BenchmarkStore.shared.clear()
+                benchmarkHistory = []
+                benchmarkCSVURL = nil
             } catch {
                 errorMessage = error.localizedDescription
             }
