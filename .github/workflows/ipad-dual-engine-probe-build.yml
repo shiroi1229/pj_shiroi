@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'ios/ShiroiDualEngineProbe/**'
+      - 'ios/ShiroiMLXRuntime/**'
       - '.github/workflows/ipad-dual-engine-probe-build.yml'
   workflow_dispatch:
 
@@ -16,31 +17,58 @@ jobs:
         run: xcodebuild -version && swift --version
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Generate Xcode project
-        working-directory: ios/ShiroiDualEngineProbe
+
+      - name: Generate isolated MLX runtime project
+        working-directory: ios/ShiroiMLXRuntime
         run: xcodegen generate
-      - name: Resolve Core ML + MLX packages
-        working-directory: ios/ShiroiDualEngineProbe
+      - name: Resolve MLX runtime packages
+        working-directory: ios/ShiroiMLXRuntime
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project ShiroiDualEngineProbe.xcodeproj \
-            -scheme ShiroiDualEngineProbe \
+            -project ShiroiMLXRuntime.xcodeproj \
+            -scheme ShiroiMLXRuntime \
             -clonedSourcePackagesDirPath .build/SourcePackages
-      - name: Patch upstream MLX examples iOS floor for probe
-        working-directory: ios/ShiroiDualEngineProbe
+      - name: Patch upstream MLX examples iOS floor for runtime probe
+        working-directory: ios/ShiroiMLXRuntime
         run: |
           MANIFEST=.build/SourcePackages/checkouts/mlx-swift-examples/Package.swift
           test -f "$MANIFEST"
           grep -q '\.iOS(\.v16)' "$MANIFEST"
           sed -i '' 's/\.iOS(\.v16)/.iOS(.v17)/g' "$MANIFEST"
-      - name: Compile dual engine probe for iOS arm64
+      - name: Build isolated MLX runtime framework
+        working-directory: ios/ShiroiMLXRuntime
+        run: |
+          xcodebuild \
+            -project ShiroiMLXRuntime.xcodeproj \
+            -scheme ShiroiMLXRuntime \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            BUILD_DIR="$PWD/build" \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          test -d build/Release-iphoneos/ShiroiMLXRuntime.framework
+
+      - name: Generate Core ML app probe project
+        working-directory: ios/ShiroiDualEngineProbe
+        run: xcodegen generate
+      - name: Resolve app Core ML packages independently
+        working-directory: ios/ShiroiDualEngineProbe
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project ShiroiDualEngineProbe.xcodeproj \
+            -scheme ShiroiDualEngineProbe \
+            -clonedSourcePackagesDirPath .build/CoreMLPackages
+      - name: Compile app with Core ML + prebuilt MLX runtime
         working-directory: ios/ShiroiDualEngineProbe
         run: |
           xcodebuild \
             -project ShiroiDualEngineProbe.xcodeproj \
             -scheme ShiroiDualEngineProbe \
             -destination 'generic/platform=iOS' \
-            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -clonedSourcePackagesDirPath .build/CoreMLPackages \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO \
             build
