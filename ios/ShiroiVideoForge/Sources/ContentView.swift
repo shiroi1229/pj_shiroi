@@ -55,7 +55,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("On-device AI video generation")
                     .font(.title2.bold())
-                Text("Core ML + Metal + HEVC • no X2 inference path")
+                Text("Core ML + Vision + Metal + HEVC • no X2 inference path")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -94,7 +94,7 @@ struct ContentView: View {
                 GridRow { metricLabel("CPU cores", "gauge.with.dots.needle.67percent"); Text("\(model.capabilities.cpuCores)") }
                 GridRow { metricLabel("RAM", "memorychip"); Text(String(format: "%.1f GB • %@", model.capabilities.memoryGB, model.capabilities.memoryClass.rawValue)) }
                 GridRow { metricLabel("AI path", "brain"); Text("Core ML → GPU / Neural Engine / CPU") }
-                GridRow { metricLabel("Video path", "video"); Text("Metal GPU → HEVC media engine") }
+                GridRow { metricLabel("Video path", "video"); Text("Vision Flow / Metal GPU → HEVC media engine") }
                 GridRow { metricLabel("Thermal", "thermometer.medium"); Text(model.capabilities.thermalState) }
                 GridRow { metricLabel("Low Power", "battery.25percent"); Text(model.capabilities.lowPowerModeEnabled ? "Enabled" : "Off") }
             }
@@ -176,6 +176,23 @@ struct ContentView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Temporal engine")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("Temporal engine", selection: $model.temporalMode) {
+                        ForEach(TemporalMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    if model.temporalMode == .opticalFlow {
+                        Label("Experimental: Vision estimates dense pixel motion, Metal warps intermediate frames. Automatic fallback is enabled.", systemImage: "point.3.connected.trianglepath.dotted")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
                 HStack(spacing: 18) {
                     Stepper(value: $model.duration, in: 2...5, step: 1) {
