@@ -1,0 +1,29 @@
+name: ShiroiMLXProbe
+options:
+  bundleIdPrefix: com.shiroi1229
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+packages:
+  MLXExamples:
+    url: https://github.com/ml-explore/mlx-swift-examples.git
+    revision: 378f2449c257788c5067b9f8b086731d76b39b33
+targets:
+  ShiroiMLXProbe:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: MLXExamples
+        product: StableDiffusion
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiMLXProbe
+        PRODUCT_NAME: Shiroi MLX Probe
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTS_MACCATALYST: NO
+        SWIFT_VERSION: "6.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
