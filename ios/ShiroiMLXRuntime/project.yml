@@ -1,0 +1,28 @@
+name: ShiroiMLXRuntime
+options:
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+packages:
+  MLXExamples:
+    url: https://github.com/ml-explore/mlx-swift-examples.git
+    revision: 378f2449c257788c5067b9f8b086731d76b39b33
+targets:
+  ShiroiMLXRuntime:
+    type: framework
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: MLXExamples
+        product: StableDiffusion
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiMLXRuntime
+        PRODUCT_NAME: ShiroiMLXRuntime
+        DEFINES_MODULE: YES
+        BUILD_LIBRARY_FOR_DISTRIBUTION: YES
+        SKIP_INSTALL: NO
+        SWIFT_VERSION: "6.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+        CODE_SIGNING_ALLOWED: NO
