@@ -12,8 +12,6 @@ packages:
   AppleStableDiffusion:
     url: https://github.com/apple/ml-stable-diffusion.git
     revision: e12202c1f6405b83918b58a5d097cd61e3e1f702
-  ShiroiMLXBridge:
-    path: Packages/ShiroiMLXBridge
 targets:
   ShiroiDualEngineProbe:
     type: application
@@ -23,8 +21,8 @@ targets:
     dependencies:
       - package: AppleStableDiffusion
         product: StableDiffusion
-      - package: ShiroiMLXBridge
-        product: ShiroiMLXBridge
+      - framework: ../ShiroiMLXRuntime/build/Release-iphoneos/ShiroiMLXRuntime.framework
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiDualEngineProbe
