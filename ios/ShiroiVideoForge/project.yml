@@ -1,0 +1,38 @@
+name: ShiroiVideoForge
+options:
+  bundleIdPrefix: com.shiroi1229
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+packages:
+  StableDiffusion:
+    url: https://github.com/apple/ml-stable-diffusion.git
+    revision: e12202c1f6405b83918b58a5d097cd61e3e1f702
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
+targets:
+  ShiroiVideoForge:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: StableDiffusion
+      - package: ZIPFoundation
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiVideoForge
+        PRODUCT_NAME: Shiroi Video Forge
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTS_MACCATALYST: NO
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        CODE_SIGN_ENTITLEMENTS: Sources/ShiroiVideoForge.entitlements
