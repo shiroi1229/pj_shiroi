@@ -7,9 +7,8 @@ options:
 packages:
   MLXStableDiffusionLocal:
     path: .generated/MLXStableDiffusionSource
-  AppleStableDiffusion:
-    url: https://github.com/apple/ml-stable-diffusion.git
-    revision: e12202c1f6405b83918b58a5d097cd61e3e1f702
+  CoreMLStableDiffusionLocal:
+    path: .generated/CoreMLStableDiffusionSource
 targets:
   ShiroiMLXProbe:
     type: application
@@ -19,8 +18,8 @@ targets:
     dependencies:
       - package: MLXStableDiffusionLocal
         product: MLXStableDiffusion
-      - package: AppleStableDiffusion
-        product: StableDiffusion
+      - package: CoreMLStableDiffusionLocal
+        product: CoreMLStableDiffusion
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiMLXProbe
