@@ -53,13 +53,13 @@ struct BenchmarkHistoryView: View {
     private var summary: some View {
         let recent = Array(model.benchmarkHistory.prefix(10))
         let avgTotal = recent.map(\.totalSeconds).reduce(0, +) / Double(max(recent.count, 1))
-        let avgCoreML = recent.map(\.coreMLSeconds).reduce(0, +) / Double(max(recent.count, 1))
+        let avgInference = recent.map(\.inferenceSeconds).reduce(0, +) / Double(max(recent.count, 1))
         let avgMetal = recent.map(\.metalEncodeSeconds).reduce(0, +) / Double(max(recent.count, 1))
 
         return HStack(spacing: 22) {
             summaryMetric("Runs", value: "\(model.benchmarkHistory.count)")
             summaryMetric("Avg total", value: String(format: "%.1f s", avgTotal))
-            summaryMetric("Avg Core ML", value: String(format: "%.1f s", avgCoreML))
+            summaryMetric("Avg inference", value: String(format: "%.1f s", avgInference))
             summaryMetric("Avg Temporal", value: String(format: "%.2f s", avgMetal))
         }
     }
@@ -79,6 +79,10 @@ struct BenchmarkHistoryView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.quality.capitalized)
                     .font(.headline)
+                Text(record.keyframeBackend ?? "Core ML SD 1.5")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Text(record.actualTemporalPath ?? "Legacy")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -90,7 +94,7 @@ struct BenchmarkHistoryView: View {
             .frame(width: 150, alignment: .leading)
 
             metric("Total", String(format: "%.1fs", record.totalSeconds))
-            metric("Core ML", String(format: "%.1fs", record.coreMLSeconds))
+            metric("Inference", String(format: "%.1fs", record.inferenceSeconds))
             metric("Temporal", String(format: "%.2fs", record.metalEncodeSeconds))
             metric("Encode", String(format: "%.1ffps", record.encodeFramesPerSecond))
 
