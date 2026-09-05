@@ -1,6 +1,6 @@
+import CoreMLStableDiffusion
 import Foundation
 import MLXStableDiffusion
-import StableDiffusion
 import SwiftUI
 
 @main
@@ -19,9 +19,9 @@ struct MLXProbeView: View {
         NavigationStack {
             List {
                 Section("Coexistence probe") {
-                    LabeledContent("Apple module", value: String(describing: StableDiffusionPipeline.self))
+                    LabeledContent("Core ML module", value: String(describing: StableDiffusionPipeline.self))
                     LabeledContent("MLX module", value: mlxConfiguration.id)
-                    Label("Apple Core ML StableDiffusion linked", systemImage: "checkmark.circle")
+                    Label("Renamed CoreMLStableDiffusion linked", systemImage: "checkmark.circle")
                     Label("Renamed MLXStableDiffusion linked", systemImage: "checkmark.circle")
                 }
 
