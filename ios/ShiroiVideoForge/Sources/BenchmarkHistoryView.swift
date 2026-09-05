@@ -60,7 +60,7 @@ struct BenchmarkHistoryView: View {
             summaryMetric("Runs", value: "\(model.benchmarkHistory.count)")
             summaryMetric("Avg total", value: String(format: "%.1f s", avgTotal))
             summaryMetric("Avg Core ML", value: String(format: "%.1f s", avgCoreML))
-            summaryMetric("Avg Metal", value: String(format: "%.2f s", avgMetal))
+            summaryMetric("Avg Temporal", value: String(format: "%.2f s", avgMetal))
         }
     }
 
@@ -79,15 +79,19 @@ struct BenchmarkHistoryView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.quality.capitalized)
                     .font(.headline)
+                Text(record.actualTemporalPath ?? "Legacy")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Text(record.timestamp, format: .dateTime.month().day().hour().minute())
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .frame(width: 110, alignment: .leading)
+            .frame(width: 150, alignment: .leading)
 
             metric("Total", String(format: "%.1fs", record.totalSeconds))
             metric("Core ML", String(format: "%.1fs", record.coreMLSeconds))
-            metric("Metal", String(format: "%.2fs", record.metalEncodeSeconds))
+            metric("Temporal", String(format: "%.2fs", record.metalEncodeSeconds))
             metric("Encode", String(format: "%.1ffps", record.encodeFramesPerSecond))
 
             Spacer()
