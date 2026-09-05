@@ -17,11 +17,12 @@ actor VideoForgeEngine {
         let totalStart = ProcessInfo.processInfo.systemUptime
         let thermalBefore = DeviceCapabilities.current().thermalState
         let profile = capabilities.profile(for: request.quality)
+        let backendKind = keyframes.kind
 
         if Task.isCancelled { throw CancellationError() }
-        progress(0.01, "Checking \(keyframes.kind.rawValue) backend")
+        progress(0.01, "Checking \(backendKind.rawValue) backend")
         guard await keyframes.isReady() else {
-            throw ForgeError.backendNotReady(keyframes.kind)
+            throw ForgeError.backendNotReady(backendKind)
         }
 
         let inferenceStart = ProcessInfo.processInfo.systemUptime
@@ -69,6 +70,7 @@ actor VideoForgeEngine {
             outputFrames: outputFrames,
             fps: request.fps,
             quality: request.quality,
+            keyframeBackend: backendKind,
             requestedTemporalMode: request.temporalMode,
             actualTemporalPath: composition.temporalPath,
             memoryClass: capabilities.memoryClass,
