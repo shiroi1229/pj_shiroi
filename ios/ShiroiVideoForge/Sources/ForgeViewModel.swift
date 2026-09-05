@@ -10,6 +10,7 @@ final class ForgeViewModel: ObservableObject {
     @Published var quality: GenerationQuality = .balanced
     @Published var motionStrength = 0.26
     @Published var seedText = "1229"
+    @Published var temporalMode: TemporalMode = .dissolve
 
     @Published var status = "Ready"
     @Published var progress = 0.0
@@ -104,7 +105,8 @@ final class ForgeViewModel: ObservableObject {
             seed: safeSeed,
             quality: quality,
             motionStrength: Float(motionStrength),
-            bitrate: profile.bitrate
+            bitrate: profile.bitrate,
+            temporalMode: temporalMode
         )
         let capabilities = capabilities
 
