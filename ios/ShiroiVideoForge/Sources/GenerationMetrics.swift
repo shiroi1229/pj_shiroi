@@ -12,6 +12,7 @@ struct GenerationMetrics: Sendable {
     let outputFrames: Int
     let fps: Int
     let quality: GenerationQuality
+    let temporalMode: TemporalMode
     let memoryClass: DeviceCapabilities.MemoryClass
     let thermalBefore: String
     let thermalAfter: String
