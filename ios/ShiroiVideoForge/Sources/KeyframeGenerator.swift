@@ -3,17 +3,26 @@ import CoreML
 import Foundation
 import StableDiffusion
 
-actor KeyframeGenerator {
+actor KeyframeGenerator: KeyframeBackend {
+    nonisolated let kind: KeyframeBackendKind = .coreMLSD15
+
     private var pipeline: StableDiffusionPipeline?
     private var loadedDirectory: URL?
     private var loadedReduceMemory: Bool?
 
+    func isReady() async -> Bool {
+        await ModelManager.shared.installedModelDirectory() != nil
+    }
+
     func generate(
         request: GenerationRequest,
-        modelDirectory: URL,
         capabilities: DeviceCapabilities,
         progress: @escaping @Sendable (Double, String) -> Void
-    ) throws -> [CGImage] {
+    ) async throws -> [CGImage] {
+        guard let modelDirectory = await ModelManager.shared.installedModelDirectory() else {
+            throw GenerationError.modelMissing
+        }
+
         let profile = capabilities.profile(for: request.quality)
         let pipeline = try pipelineFor(directory: modelDirectory, reduceMemory: profile.reduceMemory)
         let count = profile.keyframes
@@ -84,10 +93,16 @@ actor KeyframeGenerator {
     }
 
     enum GenerationError: LocalizedError {
+        case modelMissing
         case noImage
 
         var errorDescription: String? {
-            "Core ML completed without returning a usable image."
+            switch self {
+            case .modelMissing:
+                return "The on-device Core ML model is not installed yet."
+            case .noImage:
+                return "Core ML completed without returning a usable image."
+            }
         }
     }
 }

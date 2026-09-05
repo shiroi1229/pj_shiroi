@@ -4,6 +4,7 @@ struct BenchmarkRecord: Codable, Identifiable, Sendable {
     let id: UUID
     let timestamp: Date
     let totalSeconds: Double
+    // Legacy persisted field name. Semantically this is inference time for the selected backend.
     let coreMLSeconds: Double
     let metalEncodeSeconds: Double
     let saveSeconds: Double
@@ -13,6 +14,7 @@ struct BenchmarkRecord: Codable, Identifiable, Sendable {
     let outputFrames: Int
     let fps: Int
     let quality: String
+    let keyframeBackend: String?
     let requestedTemporalMode: String?
     let actualTemporalPath: String?
     let memoryClass: String
@@ -24,7 +26,7 @@ struct BenchmarkRecord: Codable, Identifiable, Sendable {
         id = UUID()
         timestamp = metrics.startedAt
         totalSeconds = metrics.totalSeconds
-        coreMLSeconds = metrics.coreMLSeconds
+        coreMLSeconds = metrics.inferenceSeconds
         metalEncodeSeconds = metrics.metalEncodeSeconds
         saveSeconds = metrics.saveSeconds
         outputMegabytes = metrics.outputMegabytes
@@ -33,6 +35,7 @@ struct BenchmarkRecord: Codable, Identifiable, Sendable {
         outputFrames = metrics.outputFrames
         fps = metrics.fps
         quality = metrics.quality.rawValue
+        keyframeBackend = metrics.keyframeBackend.rawValue
         requestedTemporalMode = metrics.requestedTemporalMode.rawValue
         actualTemporalPath = metrics.actualTemporalPath.rawValue
         memoryClass = metrics.memoryClass.rawValue
@@ -40,6 +43,8 @@ struct BenchmarkRecord: Codable, Identifiable, Sendable {
         thermalAfter = metrics.thermalAfter
         lowPowerModeEnabled = metrics.lowPowerModeEnabled
     }
+
+    var inferenceSeconds: Double { coreMLSeconds }
 
     var encodeFramesPerSecond: Double {
         guard metalEncodeSeconds > 0 else { return 0 }
@@ -83,18 +88,19 @@ actor BenchmarkStore {
     func exportCSV() throws -> URL {
         let records = try load()
         var lines = [
-            "timestamp,quality,requested_temporal,actual_temporal,memory_class,total_s,core_ml_s,metal_hevc_s,save_s,output_mb,keyframes,steps_per_keyframe,output_frames,fps,encode_fps,thermal_before,thermal_after,low_power"
+            "timestamp,quality,keyframe_backend,requested_temporal,actual_temporal,memory_class,total_s,inference_s,temporal_hevc_s,save_s,output_mb,keyframes,steps_per_keyframe,output_frames,fps,encode_fps,thermal_before,thermal_after,low_power"
         ]
         let iso = ISO8601DateFormatter()
         for record in records {
             lines.append([
                 iso.string(from: record.timestamp),
                 csv(record.quality),
+                csv(record.keyframeBackend ?? "Core ML SD 1.5 (legacy)"),
                 csv(record.requestedTemporalMode ?? "legacy"),
                 csv(record.actualTemporalPath ?? "legacy"),
                 csv(record.memoryClass),
                 format(record.totalSeconds),
-                format(record.coreMLSeconds),
+                format(record.inferenceSeconds),
                 format(record.metalEncodeSeconds),
                 format(record.saveSeconds),
                 format(record.outputMegabytes),

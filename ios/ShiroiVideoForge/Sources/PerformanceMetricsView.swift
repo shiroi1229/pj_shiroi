@@ -8,14 +8,14 @@ struct PerformanceMetricsView: View {
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
                 GridRow {
                     metric("Total", value: seconds(metrics.totalSeconds), symbol: "stopwatch")
-                    metric("Core ML", value: seconds(metrics.coreMLSeconds), symbol: "brain")
+                    metric("Inference", value: seconds(metrics.inferenceSeconds), symbol: "brain")
                 }
                 GridRow {
                     metric("Temporal + HEVC", value: seconds(metrics.metalEncodeSeconds), symbol: "cpu")
                     metric("Save", value: seconds(metrics.saveSeconds), symbol: "internaldrive")
                 }
                 GridRow {
-                    metric("AI / keyframe", value: seconds(metrics.coreMLSecondsPerKeyframe), symbol: "photo.stack")
+                    metric("AI / keyframe", value: seconds(metrics.inferenceSecondsPerKeyframe), symbol: "photo.stack")
                     metric("Encode speed", value: String(format: "%.1f fps", metrics.encodeFramesPerSecond), symbol: "speedometer")
                 }
                 GridRow {
@@ -30,6 +30,7 @@ struct PerformanceMetricsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 16) {
+                    Label(metrics.keyframeBackend.rawValue, systemImage: "sparkles.rectangle.stack")
                     Label("\(metrics.keyframes) keyframes × \(metrics.diffusionStepsPerKeyframe) steps", systemImage: "point.3.connected.trianglepath.dotted")
                     Spacer()
                     Label("Thermal \(metrics.thermalBefore) → \(metrics.thermalAfter)", systemImage: "thermometer.medium")
