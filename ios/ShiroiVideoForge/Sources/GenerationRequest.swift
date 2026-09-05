@@ -24,6 +24,20 @@ enum GenerationQuality: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum TemporalMode: String, CaseIterable, Identifiable, Sendable {
+    case dissolve
+    case opticalFlow
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .dissolve: return "Metal Blend"
+        case .opticalFlow: return "Vision Flow"
+        }
+    }
+}
+
 struct GenerationRequest: Sendable {
     var prompt: String
     var negativePrompt: String
@@ -35,4 +49,5 @@ struct GenerationRequest: Sendable {
     var quality: GenerationQuality = .balanced
     var motionStrength: Float = 0.26
     var bitrate: Int = 8_000_000
+    var temporalMode: TemporalMode = .dissolve
 }
