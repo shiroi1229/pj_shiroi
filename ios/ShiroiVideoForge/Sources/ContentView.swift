@@ -82,6 +82,7 @@ struct ContentView: View {
             if let metrics = model.lastMetrics {
                 PerformanceMetricsView(metrics: metrics)
             }
+            BenchmarkHistoryView()
             outputLibraryCard
         }
     }
