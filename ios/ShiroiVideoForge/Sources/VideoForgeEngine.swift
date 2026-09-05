@@ -1,8 +1,12 @@
 import Foundation
 
 actor VideoForgeEngine {
-    private let keyframes = KeyframeGenerator()
+    private let keyframes: any KeyframeBackend
     private let composer = MetalVideoComposer()
+
+    init(keyframes: any KeyframeBackend = KeyframeGenerator()) {
+        self.keyframes = keyframes
+    }
 
     func generate(
         request: GenerationRequest,
@@ -15,20 +19,19 @@ actor VideoForgeEngine {
         let profile = capabilities.profile(for: request.quality)
 
         if Task.isCancelled { throw CancellationError() }
-        progress(0.01, "Checking on-device Core ML model")
-        guard let model = await ModelManager.shared.installedModelDirectory() else {
-            throw ForgeError.modelMissing
+        progress(0.01, "Checking \(keyframes.kind.rawValue) backend")
+        guard await keyframes.isReady() else {
+            throw ForgeError.backendNotReady(keyframes.kind)
         }
 
-        let coreMLStart = ProcessInfo.processInfo.systemUptime
+        let inferenceStart = ProcessInfo.processInfo.systemUptime
         let generated = try await keyframes.generate(
             request: request,
-            modelDirectory: model,
             capabilities: capabilities
         ) { value, message in
             progress(value * 0.78, message)
         }
-        let coreMLSeconds = ProcessInfo.processInfo.systemUptime - coreMLStart
+        let inferenceSeconds = ProcessInfo.processInfo.systemUptime - inferenceStart
 
         if Task.isCancelled { throw CancellationError() }
         let metalStart = ProcessInfo.processInfo.systemUptime
@@ -57,7 +60,7 @@ actor VideoForgeEngine {
         let metrics = GenerationMetrics(
             startedAt: startedAt,
             totalSeconds: totalSeconds,
-            coreMLSeconds: coreMLSeconds,
+            coreMLSeconds: inferenceSeconds,
             metalEncodeSeconds: metalEncodeSeconds,
             saveSeconds: saveSeconds,
             outputBytes: fileSize,
@@ -77,10 +80,13 @@ actor VideoForgeEngine {
     }
 
     enum ForgeError: LocalizedError {
-        case modelMissing
+        case backendNotReady(KeyframeBackendKind)
 
         var errorDescription: String? {
-            "The on-device Core ML model is not installed yet."
+            switch self {
+            case .backendNotReady(let kind):
+                return "The \(kind.rawValue) keyframe backend is not ready yet."
+            }
         }
     }
 }
