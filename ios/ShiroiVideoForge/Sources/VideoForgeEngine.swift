@@ -66,6 +66,7 @@ actor VideoForgeEngine {
             outputFrames: outputFrames,
             fps: request.fps,
             quality: request.quality,
+            temporalMode: request.temporalMode,
             memoryClass: capabilities.memoryClass,
             thermalBefore: thermalBefore,
             thermalAfter: thermalAfter,
