@@ -1,0 +1,46 @@
+name: iPad Dual Engine Probe Build
+
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiDualEngineProbe/**'
+      - '.github/workflows/ipad-dual-engine-probe-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios/ShiroiDualEngineProbe
+        run: xcodegen generate
+      - name: Resolve Core ML + MLX packages
+        working-directory: ios/ShiroiDualEngineProbe
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project ShiroiDualEngineProbe.xcodeproj \
+            -scheme ShiroiDualEngineProbe \
+            -clonedSourcePackagesDirPath .build/SourcePackages
+      - name: Patch upstream MLX examples iOS floor for probe
+        working-directory: ios/ShiroiDualEngineProbe
+        run: |
+          MANIFEST=.build/SourcePackages/checkouts/mlx-swift-examples/Package.swift
+          test -f "$MANIFEST"
+          grep -q '\.iOS(\.v16)' "$MANIFEST"
+          sed -i '' 's/\.iOS(\.v16)/.iOS(.v17)/g' "$MANIFEST"
+      - name: Compile dual engine probe for iOS arm64
+        working-directory: ios/ShiroiDualEngineProbe
+        run: |
+          xcodebuild \
+            -project ShiroiDualEngineProbe.xcodeproj \
+            -scheme ShiroiDualEngineProbe \
+            -destination 'generic/platform=iOS' \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO \
+            build
