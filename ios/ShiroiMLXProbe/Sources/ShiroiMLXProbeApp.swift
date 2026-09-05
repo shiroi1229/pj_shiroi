@@ -1,5 +1,6 @@
+import CoreMLStableDiffusion
 import Foundation
-import StableDiffusion
+import MLXStableDiffusion
 import SwiftUI
 
 @main
@@ -12,26 +13,29 @@ struct ShiroiMLXProbeApp: App {
 }
 
 struct MLXProbeView: View {
-    private let configuration = StableDiffusionConfiguration.presetSDXLTurbo
+    private let mlxConfiguration = StableDiffusionConfiguration.presetSDXLTurbo
 
     var body: some View {
         NavigationStack {
             List {
-                Section("MLX Swift") {
-                    LabeledContent("Model", value: configuration.id)
-                    LabeledContent("Backend", value: "MLX / Metal GPU")
-                    LabeledContent("Target", value: "iPadOS 18+")
+                Section("Coexistence probe") {
+                    LabeledContent("Core ML module", value: String(describing: StableDiffusionPipeline.self))
+                    LabeledContent("MLX module", value: mlxConfiguration.id)
+                    Label("Renamed CoreMLStableDiffusion linked", systemImage: "checkmark.circle")
+                    Label("Renamed MLXStableDiffusion linked", systemImage: "checkmark.circle")
                 }
 
-                Section("SDXL Turbo API") {
-                    let parameters = configuration.defaultParameters()
+                Section("MLX / Metal GPU") {
+                    let parameters = mlxConfiguration.defaultParameters()
+                    LabeledContent("Model", value: mlxConfiguration.id)
                     LabeledContent("Default steps", value: "\(parameters.steps)")
                     LabeledContent("CFG", value: String(format: "%.1f", parameters.cfgWeight))
-                    Label("Text-to-image API linked", systemImage: "checkmark.circle")
-                    Label("Image-to-image API linked", systemImage: "checkmark.circle")
+                    LabeledContent("Target", value: "iPadOS 18+")
+                    Label("Text-to-image API available", systemImage: "sparkles")
+                    Label("Image-to-image API available", systemImage: "photo.on.rectangle")
                 }
             }
-            .navigationTitle("Shiroi MLX Probe")
+            .navigationTitle("Shiroi Dual Engine Probe")
         }
     }
 }

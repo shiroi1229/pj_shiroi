@@ -16,32 +16,14 @@ jobs:
         run: xcodebuild -version && swift --version
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Prepare renamed MLX backend
+        run: bash ios/ShiroiMLXProbe/prepare_mlx_backend.sh
       - name: Generate Xcode project
         working-directory: ios/ShiroiMLXProbe
         run: xcodegen generate
-      - name: Resolve MLX packages
+      - name: Resolve dual-engine packages
         working-directory: ios/ShiroiMLXProbe
-        run: |
-          xcodebuild -resolvePackageDependencies \
-            -project ShiroiMLXProbe.xcodeproj \
-            -scheme ShiroiMLXProbe \
-            -clonedSourcePackagesDirPath .build/SourcePackages
-      - name: Patch upstream MLX examples iOS floor for probe
+        run: xcodebuild -resolvePackageDependencies -project ShiroiMLXProbe.xcodeproj -scheme ShiroiMLXProbe
+      - name: Compile dual-engine probe for iOS device
         working-directory: ios/ShiroiMLXProbe
-        run: |
-          MANIFEST=.build/SourcePackages/checkouts/mlx-swift-examples/Package.swift
-          test -f "$MANIFEST"
-          grep -q '\.iOS(\.v16)' "$MANIFEST"
-          sed -i '' 's/\.iOS(\.v16)/.iOS(.v17)/g' "$MANIFEST"
-          grep 'platforms:' "$MANIFEST"
-      - name: Compile MLX probe for iOS device
-        working-directory: ios/ShiroiMLXProbe
-        run: |
-          xcodebuild \
-            -project ShiroiMLXProbe.xcodeproj \
-            -scheme ShiroiMLXProbe \
-            -destination 'generic/platform=iOS' \
-            -clonedSourcePackagesDirPath .build/SourcePackages \
-            -disableAutomaticPackageResolution \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+        run: xcodebuild -project ShiroiMLXProbe.xcodeproj -scheme ShiroiMLXProbe -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build

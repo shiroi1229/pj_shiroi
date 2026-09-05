@@ -5,9 +5,10 @@ options:
     iOS: "18.0"
   xcodeVersion: "26.0"
 packages:
-  MLXExamples:
-    url: https://github.com/ml-explore/mlx-swift-examples.git
-    revision: 378f2449c257788c5067b9f8b086731d76b39b33
+  MLXStableDiffusionLocal:
+    path: .generated/MLXStableDiffusionSource
+  CoreMLStableDiffusionLocal:
+    path: .generated/CoreMLStableDiffusionSource
 targets:
   ShiroiMLXProbe:
     type: application
@@ -15,8 +16,10 @@ targets:
     sources:
       - Sources
     dependencies:
-      - package: MLXExamples
-        product: StableDiffusion
+      - package: MLXStableDiffusionLocal
+        product: MLXStableDiffusion
+      - package: CoreMLStableDiffusionLocal
+        product: CoreMLStableDiffusion
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiMLXProbe
