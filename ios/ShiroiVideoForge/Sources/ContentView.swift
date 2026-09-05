@@ -79,6 +79,9 @@ struct ContentView: View {
         VStack(spacing: 20) {
             settingsCard
             generationCard
+            if let metrics = model.lastMetrics {
+                PerformanceMetricsView(metrics: metrics)
+            }
             outputLibraryCard
         }
     }

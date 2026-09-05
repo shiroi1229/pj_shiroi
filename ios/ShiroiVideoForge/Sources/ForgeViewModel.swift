@@ -19,6 +19,7 @@ final class ForgeViewModel: ObservableObject {
     @Published var outputs: [URL] = []
     @Published var errorMessage: String?
     @Published var capabilities = DeviceCapabilities.current()
+    @Published var lastMetrics: GenerationMetrics?
 
     private let engine = VideoForgeEngine()
     private var generationTask: Task<Void, Never>?
@@ -77,6 +78,7 @@ final class ForgeViewModel: ObservableObject {
         isBusy = true
         progress = 0
         errorMessage = nil
+        lastMetrics = nil
         status = "Starting on-device generation"
 
         let safeSeed = UInt32(seedText) ?? 1229
@@ -103,7 +105,7 @@ final class ForgeViewModel: ObservableObject {
             }
 
             do {
-                let url = try await self.engine.generate(
+                let result = try await self.engine.generate(
                     request: request,
                     capabilities: capabilities
                 ) { [weak self] value, message in
@@ -113,9 +115,15 @@ final class ForgeViewModel: ObservableObject {
                     }
                 }
 
-                self.outputURL = url
+                self.outputURL = result.url
+                self.lastMetrics = result.metrics
                 self.progress = 1
-                self.status = "Finished • generated entirely on this iPad"
+                self.status = String(
+                    format: "Finished locally • %.1f s total • %.1f MB",
+                    result.metrics.totalSeconds,
+                    result.metrics.outputMegabytes
+                )
+                self.refreshDeviceState()
                 await self.refreshOutputs()
             } catch is CancellationError {
                 self.status = "Generation cancelled"
