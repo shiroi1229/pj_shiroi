@@ -11,7 +11,7 @@ struct PerformanceMetricsView: View {
                     metric("Core ML", value: seconds(metrics.coreMLSeconds), symbol: "brain")
                 }
                 GridRow {
-                    metric("Metal + HEVC", value: seconds(metrics.metalEncodeSeconds), symbol: "cpu")
+                    metric("Temporal + HEVC", value: seconds(metrics.metalEncodeSeconds), symbol: "cpu")
                     metric("Save", value: seconds(metrics.saveSeconds), symbol: "internaldrive")
                 }
                 GridRow {
@@ -28,12 +28,19 @@ struct PerformanceMetricsView: View {
             Divider()
                 .padding(.vertical, 4)
 
-            HStack(spacing: 16) {
-                Label("\(metrics.keyframes) keyframes × \(metrics.diffusionStepsPerKeyframe) steps", systemImage: "point.3.connected.trianglepath.dotted")
-                Spacer()
-                Label("Thermal \(metrics.thermalBefore) → \(metrics.thermalAfter)", systemImage: "thermometer.medium")
-                if metrics.lowPowerModeEnabled {
-                    Label("Low Power", systemImage: "battery.25percent")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 16) {
+                    Label("\(metrics.keyframes) keyframes × \(metrics.diffusionStepsPerKeyframe) steps", systemImage: "point.3.connected.trianglepath.dotted")
+                    Spacer()
+                    Label("Thermal \(metrics.thermalBefore) → \(metrics.thermalAfter)", systemImage: "thermometer.medium")
+                    if metrics.lowPowerModeEnabled {
+                        Label("Low Power", systemImage: "battery.25percent")
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    Label("Requested: \(metrics.requestedTemporalMode.title)", systemImage: "slider.horizontal.3")
+                    Label("Actual: \(metrics.actualTemporalPath.rawValue)", systemImage: metrics.actualTemporalPath == .visionFlow ? "checkmark.circle.fill" : "arrow.triangle.branch")
                 }
             }
             .font(.caption)
