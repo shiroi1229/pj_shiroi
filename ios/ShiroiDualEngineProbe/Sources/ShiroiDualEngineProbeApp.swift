@@ -1,4 +1,4 @@
-import ShiroiMLXBridge
+import ShiroiMLXRuntime
 import StableDiffusion
 import SwiftUI
 
@@ -12,7 +12,7 @@ struct ShiroiDualEngineProbeApp: App {
 }
 
 struct DualEngineProbeView: View {
-    private let mlx = ShiroiMLXCapabilities()
+    private let mlx = ShiroiMLXRuntimeInfo()
     private let coreMLConfig = StableDiffusionPipeline.Configuration(prompt: "dual engine compile probe")
 
     var body: some View {
@@ -25,11 +25,11 @@ struct DualEngineProbeView: View {
                 }
 
                 Section("MLX engine") {
-                    LabeledContent("Module", value: "ShiroiMLXBridge → MLXStableDiffusion")
+                    LabeledContent("Module", value: "ShiroiMLXRuntime.framework")
                     LabeledContent("Model", value: mlx.modelID)
                     LabeledContent("Default steps", value: "\(mlx.defaultSteps)")
                     LabeledContent("CFG", value: "\(mlx.defaultCFG)")
-                    LabeledContent("Compute", value: "MLX / Metal GPU")
+                    LabeledContent("Compute", value: mlx.backend)
                 }
             }
             .navigationTitle("Dual Engine Probe")
