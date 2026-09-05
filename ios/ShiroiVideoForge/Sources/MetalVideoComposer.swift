@@ -20,19 +20,29 @@ actor MetalVideoComposer {
         }
     }
 
-    func compose(keyframes: [CGImage], request: GenerationRequest, progress: @escaping @Sendable (Double, String) -> Void) async throws -> URL {
+    func compose(
+        keyframes: [CGImage],
+        request: GenerationRequest,
+        capabilities: DeviceCapabilities,
+        progress: @escaping @Sendable (Double, String) -> Void
+    ) async throws -> URL {
         guard let device = MTLCreateSystemDefaultDevice() else { throw ComposerError.metalUnavailable }
-        let context = CIContext(mtlDevice: device, options: [.cacheIntermediates: true])
+        let context = CIContext(mtlDevice: device, options: [
+            .cacheIntermediates: true,
+            .priorityRequestLow: false
+        ])
 
         let output = FileManager.default.temporaryDirectory.appending(path: "ShiroiVideoForge-\(UUID().uuidString).mov")
         let writer = try AVAssetWriter(outputURL: output, fileType: .mov)
+        let bitrate = max(request.bitrate, capabilities.profile(for: request.quality).bitrate)
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: request.width,
             AVVideoHeightKey: request.height,
             AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: 8_000_000,
-                AVVideoExpectedSourceFrameRateKey: request.fps
+                AVVideoAverageBitRateKey: bitrate,
+                AVVideoExpectedSourceFrameRateKey: request.fps,
+                AVVideoMaxKeyFrameIntervalKey: request.fps
             ]
         ]
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
@@ -41,7 +51,8 @@ actor MetalVideoComposer {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: request.width,
             kCVPixelBufferHeightKey as String: request.height,
-            kCVPixelBufferMetalCompatibilityKey as String: true
+            kCVPixelBufferMetalCompatibilityKey as String: true,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
         ]
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: attributes)
         guard writer.canAdd(input) else { throw ComposerError.writerFailed("AVAssetWriter rejected the video input.") }
@@ -54,7 +65,16 @@ actor MetalVideoComposer {
         let extent = CGRect(x: 0, y: 0, width: request.width, height: request.height)
 
         for frame in 0..<totalFrames {
+            if Task.isCancelled {
+                writer.cancelWriting()
+                throw CancellationError()
+            }
+
             while !input.isReadyForMoreMediaData {
+                if Task.isCancelled {
+                    writer.cancelWriting()
+                    throw CancellationError()
+                }
                 try await Task.sleep(for: .milliseconds(2))
             }
 
@@ -64,8 +84,8 @@ actor MetalVideoComposer {
             let b = min(a + 1, max(source.count - 1, 0))
             let mix = position - floor(position)
 
-            let imageA = fit(source[a], into: extent)
-            let imageB = fit(source[b], into: extent)
+            let imageA = animatedFit(source[a], into: extent, globalProgress: normalized, direction: 1)
+            let imageB = animatedFit(source[b], into: extent, globalProgress: normalized, direction: -1)
             let blended = imageA.applyingFilter("CIDissolveTransition", parameters: [
                 kCIInputTargetImageKey: imageB,
                 kCIInputTimeKey: mix
@@ -81,7 +101,11 @@ actor MetalVideoComposer {
             guard adaptor.append(buffer, withPresentationTime: time) else {
                 throw ComposerError.writerFailed(writer.error?.localizedDescription ?? "Failed while encoding video.")
             }
-            progress(Double(frame + 1) / Double(totalFrames), "Metal temporal compose • \(frame + 1)/\(totalFrames)")
+
+            if frame.isMultiple(of: 12) {
+                context.clearCaches()
+            }
+            progress(Double(frame + 1) / Double(totalFrames), "Metal compose + HEVC • \(frame + 1)/\(totalFrames)")
         }
 
         input.markAsFinished()
@@ -92,13 +116,25 @@ actor MetalVideoComposer {
         return output
     }
 
-    private func fit(_ image: CIImage, into target: CGRect) -> CIImage {
+    private func animatedFit(
+        _ image: CIImage,
+        into target: CGRect,
+        globalProgress: Double,
+        direction: CGFloat
+    ) -> CIImage {
         let sx = target.width / image.extent.width
         let sy = target.height / image.extent.height
-        let scale = max(sx, sy)
+        let baseScale = max(sx, sy)
+        let motionScale = 1.0 + CGFloat(0.035 * sin(globalProgress * .pi))
+        let scale = baseScale * motionScale
         let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let dx = target.midX - scaled.extent.midX
+
+        let travel = target.width * 0.018
+        let pan = direction * travel * CGFloat(globalProgress - 0.5)
+        let dx = target.midX - scaled.extent.midX + pan
         let dy = target.midY - scaled.extent.midY
-        return scaled.transformed(by: CGAffineTransform(translationX: dx, y: dy)).cropped(to: target)
+        return scaled
+            .transformed(by: CGAffineTransform(translationX: dx, y: dy))
+            .cropped(to: target)
     }
 }
