@@ -1,0 +1,27 @@
+name: iPad MLX Probe Build
+
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiMLXProbe/**'
+      - '.github/workflows/ipad-mlx-probe-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: xcodebuild -version && swift --version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios/ShiroiMLXProbe
+        run: xcodegen generate
+      - name: Resolve MLX packages
+        working-directory: ios/ShiroiMLXProbe
+        run: xcodebuild -resolvePackageDependencies -project ShiroiMLXProbe.xcodeproj -scheme ShiroiMLXProbe
+      - name: Compile MLX probe for iOS device
+        working-directory: ios/ShiroiMLXProbe
+        run: xcodebuild -project ShiroiMLXProbe.xcodeproj -scheme ShiroiMLXProbe -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
