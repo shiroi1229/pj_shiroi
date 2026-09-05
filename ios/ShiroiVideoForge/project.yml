@@ -22,6 +22,7 @@ targets:
     platform: iOS
     sources:
       - Sources
+      - Assets.xcassets
     dependencies:
       - package: StableDiffusion
       - package: ZIPFoundation
@@ -29,11 +30,13 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiVideoForge
         PRODUCT_NAME: Shiroi Video Forge
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "2"
         SUPPORTS_MACCATALYST: NO
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Sources/ShiroiVideoForge.entitlements

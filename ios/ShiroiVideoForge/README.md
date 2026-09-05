@@ -1,29 +1,40 @@
 # Shiroi Video Forge
 
-Native iPadOS video generation app designed for M4 iPad Pro. Generation is executed on-device; X2 is not part of the inference path.
+Native iPadOS app under development. Inference, frame composition and video export execute on the iPad; X2 is not the inference host. An unsigned build is not an installable app. See [DELIVERY.md](DELIVERY.md) for delivery gates and honest verification limits.
 
-## V1 pipeline
-1. Prompt is encoded and diffusion keyframes are generated with Apple's `ml-stable-diffusion` Swift/Core ML pipeline.
-2. Core ML uses a mobile-optimized 6-bit Stable Diffusion 1.5 model. The iPad profile uses CPU + Neural Engine with reduced-memory loading.
-3. Subsequent keyframes use image-to-image from the prior keyframe for temporal continuity.
-4. Core Image executes through a Metal-backed context to synthesize the temporal frames.
-5. AVFoundation encodes the final MOV with HEVC, using Apple's hardware media path when available.
+## Current pipeline
+1. Apple's `ml-stable-diffusion` Swift/Core ML pipeline generates image keyframes using a 6-bit SD 1.5 model.
+2. Core ML `computeUnits = .all` permits CPU/GPU/Neural Engine scheduling. It does not prove simultaneous use or maximum utilization.
+3. Later keyframes use image-to-image from the prior frame.
+4. Metal-backed Core Image blending or experimental Vision optical-flow warping builds intermediate frames.
+5. AVFoundation writes a local HEVC MOV. Hardware encoding and end-to-end performance need device verification.
 
-The shipped model is not committed to Git. The app downloads the public Core ML archive (~1.56 GB) from Apple's Hugging Face model repository and stores it in Application Support on the iPad.
+This is **image-keyframe animation**, not a full temporal video diffusion model. The source model is nominally 512x512. Increasing exported pixel dimensions is not higher-resolution AI inference.
 
-## Hardware adaptation
-The app reads physical memory at runtime. 8 GB-class devices default to fewer keyframes and fewer diffusion steps. 16 GB-class devices use a higher quality profile.
+The model archive is not stored in Git. `ModelManifest.swift` pins the actual Apple/Hugging Face artifact and revision (~1.57 GB). Installation requires at least 5 GB free storage for downloading, staging and safety margin. CRC and structural checks do not replace full model inference tests.
 
-## Build
-The project is described by `project.yml` and generated with XcodeGen.
+## Build and evidence
+The macOS CI selects a stable Xcode 26+ with an iOS SDK 26+ for current Apple submission requirements. The minimum deployment target is still iPadOS 18. Hardware profiles are derived from runtime memory, not an assumed specific iPad model.
+
+For a maintainer building locally on a Mac with supported Xcode selected:
 
 ```bash
+cd ios/ShiroiVideoForge
+python3 scripts/create_app_icon.py
 brew install xcodegen
 xcodegen generate
-xcodebuild -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge \
+  -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
-Actual device installation requires Apple code signing. The repository CI performs an unsigned compile check; TestFlight/device delivery requires an Apple Developer signing setup.
+Pure Foundation regression tests (no Apple SDK or device required):
 
-## Next generation engine
-V2 will replace the keyframe temporal bridge with a converted temporal/video diffusion Core ML model after on-device memory and thermal profiling on the target M4 iPad Pro. The renderer and encoder are already isolated so that model can be swapped without replacing the app shell.
+```bash
+swiftc -swift-version 5 Sources/GenerationRequest.swift Sources/ModelManifest.swift Tests/PreflightTests.swift -o /tmp/forge-preflight
+/tmp/forge-preflight
+```
+
+## Native app delivery
+The user is not expected to edit Swift or use Playgrounds. Delivery is through a properly signed beta. The main-only manual TestFlight workflow defaults to no upload and requires the signing inputs documented in DELIVERY.md. Signing credentials and signed binaries are not committed or published as GitHub artifacts.
+
+Before beta delivery: verify signing, current app/SDK privacy declarations, model license obligations, App Store Connect metadata and Apple's processing/review requirements. Before declaring completion: install on the actual iPad, download the model, generate and replay a video, test cancellation and benchmark sustained performance.
