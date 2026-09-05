@@ -32,7 +32,7 @@ actor VideoForgeEngine {
 
         if Task.isCancelled { throw CancellationError() }
         let metalStart = ProcessInfo.processInfo.systemUptime
-        let temporary = try await composer.compose(
+        let composition = try await composer.compose(
             keyframes: generated,
             request: request,
             capabilities: capabilities
@@ -44,7 +44,7 @@ actor VideoForgeEngine {
         if Task.isCancelled { throw CancellationError() }
         progress(0.99, "Saving video on this iPad")
         let saveStart = ProcessInfo.processInfo.systemUptime
-        let finalURL = try await OutputStore.shared.persist(temporaryURL: temporary)
+        let finalURL = try await OutputStore.shared.persist(temporaryURL: composition.url)
         let saveSeconds = ProcessInfo.processInfo.systemUptime - saveStart
 
         let fileSize = Int64(
@@ -66,7 +66,8 @@ actor VideoForgeEngine {
             outputFrames: outputFrames,
             fps: request.fps,
             quality: request.quality,
-            temporalMode: request.temporalMode,
+            requestedTemporalMode: request.temporalMode,
+            actualTemporalPath: composition.temporalPath,
             memoryClass: capabilities.memoryClass,
             thermalBefore: thermalBefore,
             thermalAfter: thermalAfter,
