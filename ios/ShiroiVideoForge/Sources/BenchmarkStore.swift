@@ -13,6 +13,8 @@ struct BenchmarkRecord: Codable, Identifiable, Sendable {
     let outputFrames: Int
     let fps: Int
     let quality: String
+    let requestedTemporalMode: String?
+    let actualTemporalPath: String?
     let memoryClass: String
     let thermalBefore: String
     let thermalAfter: String
@@ -31,6 +33,8 @@ struct BenchmarkRecord: Codable, Identifiable, Sendable {
         outputFrames = metrics.outputFrames
         fps = metrics.fps
         quality = metrics.quality.rawValue
+        requestedTemporalMode = metrics.requestedTemporalMode.rawValue
+        actualTemporalPath = metrics.actualTemporalPath.rawValue
         memoryClass = metrics.memoryClass.rawValue
         thermalBefore = metrics.thermalBefore
         thermalAfter = metrics.thermalAfter
@@ -79,13 +83,15 @@ actor BenchmarkStore {
     func exportCSV() throws -> URL {
         let records = try load()
         var lines = [
-            "timestamp,quality,memory_class,total_s,core_ml_s,metal_hevc_s,save_s,output_mb,keyframes,steps_per_keyframe,output_frames,fps,encode_fps,thermal_before,thermal_after,low_power"
+            "timestamp,quality,requested_temporal,actual_temporal,memory_class,total_s,core_ml_s,metal_hevc_s,save_s,output_mb,keyframes,steps_per_keyframe,output_frames,fps,encode_fps,thermal_before,thermal_after,low_power"
         ]
         let iso = ISO8601DateFormatter()
         for record in records {
             lines.append([
                 iso.string(from: record.timestamp),
                 csv(record.quality),
+                csv(record.requestedTemporalMode ?? "legacy"),
+                csv(record.actualTemporalPath ?? "legacy"),
                 csv(record.memoryClass),
                 format(record.totalSeconds),
                 format(record.coreMLSeconds),
