@@ -30,6 +30,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Select stable Xcode 26+ and verify SDK
+        run: bash scripts/select_xcode.sh
       - name: Run Foundation regression tests
         run: |
           set -euo pipefail

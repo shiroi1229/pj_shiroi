@@ -24,6 +24,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Select stable Xcode 26+ and verify SDK
+        run: bash ios/ShiroiVideoForge/scripts/select_xcode.sh
       - name: Verify Apple signing inputs are present
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

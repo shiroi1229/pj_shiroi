@@ -40,3 +40,7 @@ This remains Stable Diffusion image keyframes + Metal/Vision interpolation, **no
 - https://huggingface.co/apple/coreml-stable-diffusion-v1-5-palettized/tree/04a6a0bdd66fb8da470c14e56d762343ef579d88
 - https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications
 - https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases
+
+## SDK submission guard
+Both workflows select an installed stable Xcode 26+ and require iOS SDK 26+ rather than relying on the runner default. This follows the App Store Connect submission requirement effective April 28, 2026. Deployment target remains iPadOS 18.0.
+Source: https://developer.apple.com/news/upcoming-requirements/?id=02032026a
