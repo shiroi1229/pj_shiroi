@@ -4,22 +4,108 @@ on:
   pull_request:
     paths:
       - 'ios/ShiroiVideoForge/**'
-      - '.github/workflows/ipad-video-forge-build.yml'
+      - '.github/workflows/ipad-video-forge-*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ios/ShiroiVideoForge/**'
+      - '.github/workflows/ipad-video-forge-*.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: video-forge-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: macos-15
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: ios/ShiroiVideoForge
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run Foundation regression tests
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          swiftc -swift-version 5 Sources/GenerationRequest.swift Sources/ModelManifest.swift Tests/PreflightTests.swift -o "$RUNNER_TEMP/forge-preflight"
+          "$RUNNER_TEMP/forge-preflight" | tee output/preflight-tests.log
+      - name: Check pinned model endpoint without downloading weights
+        run: |
+          set -euo pipefail
+          python3 scripts/check_model_source.py | tee output/model-source.log
+      - name: Prepare app icon
+        run: python3 scripts/create_app_icon.py
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
-        working-directory: ios/ShiroiVideoForge
         run: xcodegen generate
-      - name: Resolve packages
-        working-directory: ios/ShiroiVideoForge
-        run: xcodebuild -resolvePackageDependencies -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge
-      - name: Compile for iOS device (unsigned)
-        working-directory: ios/ShiroiVideoForge
-        run: xcodebuild -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Compile Release for iPad (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath build -resultBundlePath output/build.xcresult \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee output/build.log
+      - name: Preserve unsigned app and label its limits
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent 'build/Build/Products/Release-iphoneos/Shiroi Video Forge.app' output/ShiroiVideoForge-UNSIGNED.app.zip
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path('output/verification.json').write_text(json.dumps({
+              'source_commit': os.environ['GITHUB_SHA'], 'device_target_compile': 'passed',
+              'signature': 'absent', 'installable_on_ipad': False,
+              'on_device_inference': 'not_tested', 'gpu_performance': 'not_measured',
+              'pipeline': 'image-keyframes-and-interpolation-not-temporal-diffusion'
+          }, indent=2))
+          PY
+          echo 'Compile passed. Artifact is UNSIGNED and cannot be installed on iPad.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve build evidence (never an installable IPA)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-forge-unsigned-evidence-${{ github.run_id }}
+          path: ios/ShiroiVideoForge/output/
+          if-no-files-found: warn
+          retention-days: 7
+
+  signing-readiness:
+    # Never expose signing material to pull-request code. Check presence, not values.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check repository signing configuration without disclosing secrets
+        env:
+          HAS_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' }}
+          HAS_BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+          HAS_P12_PASSWORD: ${{ secrets.P12_PASSWORD != '' }}
+          HAS_BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 != '' }}
+          HAS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID != '' }}
+          HAS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID != '' }}
+          HAS_APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY != '' }}
+        run: |
+          python3 - <<'PY'
+          import os, json
+          from pathlib import Path
+          missing = sorted(k[4:] for k,v in os.environ.items() if k.startswith('HAS_') and v != 'true')
+          report = {'repository_secrets_present': not missing, 'missing_secret_names': missing,
+                    'signed_build': 'not_run', 'testflight_upload': 'not_run', 'ipad_test': 'not_run'}
+          Path('signing-readiness.json').write_text(json.dumps(report, indent=2))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('## iPad delivery gate\n')
+              f.write('Missing repository secret names: ' + ', '.join(missing) + '\n' if missing else 'Secret names present; validity is NOT verified.\n')
+              f.write('No signed build or TestFlight upload was performed.\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-forge-signing-readiness-${{ github.run_id }}
+          path: signing-readiness.json
+          retention-days: 7

@@ -1,0 +1,9 @@
+Assets.xcassets/
+build/
+output/
+*.xcodeproj/
+*.xcarchive/
+*.ipa
+*.p12
+*.p8
+*.mobileprovision
