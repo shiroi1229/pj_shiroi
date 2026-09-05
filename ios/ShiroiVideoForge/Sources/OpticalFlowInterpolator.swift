@@ -122,12 +122,15 @@ final class OpticalFlowInterpolator {
     }
 
     private func generateFlow(from source: CGImage, to target: CGImage, quality: GenerationQuality) throws -> CVPixelBuffer {
-        let request = VNGenerateOpticalFlowRequest(targetedCGImage: target, options: [:])
+        // VNGenerateOpticalFlowRequest reports motion relative to the image handled by
+        // VNImageRequestHandler. To obtain the source→target field expected by the Metal
+        // warp kernel, target the source image and perform the request on the target image.
+        let request = VNGenerateOpticalFlowRequest(targetedCGImage: source, options: [:])
         request.computationAccuracy = quality == .quality ? .high : .medium
         request.outputPixelFormat = kCVPixelFormatType_TwoComponent32Float
         request.keepNetworkOutput = false
 
-        let handler = VNImageRequestHandler(cgImage: source, options: [:])
+        let handler = VNImageRequestHandler(cgImage: target, options: [:])
         try handler.perform([request])
         guard let observation = request.results?.first else {
             throw FlowError.opticalFlowUnavailable
