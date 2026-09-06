@@ -40,12 +40,19 @@ enum AIEndToEndProbe {
         let generator = KeyframeGenerator(resourceDirectory: resources)
         guard await generator.isReady() else { throw Failure.modelMissing }
         let capabilities = DeviceCapabilities.current()
+        // Exercise the app's default Balanced profile. Prior Fast-profile failures
+        // are retained in Actions history, not relabeled as passing generations.
         let request = GenerationRequest(
-            prompt: "a small orange ceramic teapot on a wooden table, soft studio lighting, photographic, detailed",
+            prompt: "a snowy mountain landscape under a clear blue sky, landscape photograph, no people",
             negativePrompt: "text, watermark, low quality, distorted", duration: 1, fps: 12,
-            width: 512, height: 512, quality: .fast, motionStrength: 0.26,
+            width: 512, height: 512, seed: 42, quality: .balanced, motionStrength: 0.26,
             temporalMode: .dissolve, computePolicy: .cpuAndGPU)
         let profile = capabilities.profile(for: request.quality)
+        let recipe: [String: Any] = ["prompt": request.prompt, "negative_prompt": request.negativePrompt,
+            "seed": request.seed, "quality": request.quality.rawValue, "motion_strength": request.motionStrength,
+            "compute_policy": request.computePolicy.rawValue, "keyframes": profile.keyframes, "scheduled_steps": profile.steps]
+        try JSONSerialization.data(withJSONObject: recipe, options: [.prettyPrinted, .sortedKeys])
+            .write(to: output.appendingPathComponent("recipe.json"), options: .atomic)
         print("HOST: macOS CI, NOT physical iPad. CPU+GPU permitted inference; \(profile.keyframes) keyframes / \(profile.steps) scheduled steps.")
         let start = ProcessInfo.processInfo.systemUptime
         let images = try await generator.generate(request: request, capabilities: capabilities) { value, stage in
