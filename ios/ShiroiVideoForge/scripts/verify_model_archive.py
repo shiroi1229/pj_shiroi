@@ -20,8 +20,10 @@ report_path = Path(sys.argv[2]); report_path.parent.mkdir(parents=True, exist_ok
 with urllib.request.urlopen(f'https://huggingface.co/api/models/{repo}/tree/{revision}', timeout=60) as r:
     entries = json.load(r)
 entry = next(e for e in entries if e.get('path') == name)
-expected_size = entry['size']
-expected_hash = entry['lfs']['oid']
+expected_size = int(re.search(r'static let archiveBytes: Int64 = ([\d_]+)', manifest).group(1).replace('_', ''))
+expected_hash = re.search(r'static let archiveSHA256 = "([0-9a-f]{64})"', manifest).group(1)
+if entry['size'] != expected_size or entry['lfs']['oid'] != expected_hash:
+    raise RuntimeError('Upstream metadata does not match the size/SHA-256 pinned in the native app')
 if not re.fullmatch('[0-9a-f]{64}', expected_hash): raise RuntimeError('No valid LFS SHA-256')
 archive = work / name
 sha = hashlib.sha256(); written = 0

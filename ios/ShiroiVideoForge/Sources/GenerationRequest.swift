@@ -30,6 +30,20 @@ enum TemporalMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// This is permission to schedule on selected processors, not measured utilization.
+enum InferenceComputePolicy: String, CaseIterable, Identifiable, Sendable {
+    case automatic, cpuAndGPU, cpuAndNeuralEngine, cpuOnly
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .automatic: return "自動（すべて許可）"
+        case .cpuAndGPU: return "CPU + GPU"
+        case .cpuAndNeuralEngine: return "CPU + Neural Engine"
+        case .cpuOnly: return "CPUのみ（比較用）"
+        }
+    }
+}
+
 struct GenerationRequest: Sendable {
     var prompt: String
     var negativePrompt: String
@@ -42,6 +56,7 @@ struct GenerationRequest: Sendable {
     var motionStrength: Float = 0.26
     var bitrate: Int = 8_000_000
     var temporalMode: TemporalMode = .dissolve
+    var computePolicy: InferenceComputePolicy = .automatic
 
     /// Validate before conversion to Int, allocation, inference, or encoder startup.
     @discardableResult

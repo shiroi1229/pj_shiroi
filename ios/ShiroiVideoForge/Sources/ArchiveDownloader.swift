@@ -23,7 +23,6 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
         self.resumeURL = resumeURL
         self.progress = progress
     }
-
     func download(from url: URL) async throws -> URL {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -50,25 +49,31 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
                     self.task?.resume()
                 }
             }
-        } onCancel: {
-            self.cancel()
-        }
+        } onCancel: { self.cancel() }
     }
-
     private func cancel() {
         stateQueue.async {
             guard !self.finished, !self.cancellationRequested else { return }
             self.cancellationRequested = true
             guard let task = self.task else { return }
+            if task.state == .completed {
+                self.finish(.failure(CancellationError()))
+                return
+            }
+            // Some completed-task races do not produce a resume callback.
+            self.stateQueue.asyncAfter(deadline: .now() + 2) {
+                guard !self.finished else { return }
+                self.session?.invalidateAndCancel()
+                self.finish(.failure(CancellationError()))
+            }
             task.cancel(byProducingResumeData: { data in
                 self.stateQueue.async {
-                    self.storeResume(data)
+                    if let data, !data.isEmpty { self.storeResume(data) }
                     self.finish(.failure(CancellationError()))
                 }
             })
         }
     }
-
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                     totalBytesExpectedToWrite: Int64) {
@@ -83,10 +88,8 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
             self.progress(fraction, String(format: "Model download • %.0f MB • %d%%", mb, percent))
         }
     }
-
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
-        // Do not defer the move: URLSession removes `location` after this returns.
         stateQueue.sync {
             guard !finished else { return }
             do {
@@ -101,7 +104,6 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
             } catch { fileError = error }
         }
     }
-
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         stateQueue.async {
             guard !self.finished else { return }
@@ -116,17 +118,13 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
             } else if let url = self.movedFile {
                 self.storeResume(nil)
                 self.finish(.success(url))
-            } else {
-                self.finish(.failure(DownloadError.missingFile))
-            }
+            } else { self.finish(.failure(DownloadError.missingFile)) }
         }
     }
-
     private func storeResume(_ data: Data?) {
         if let data, !data.isEmpty { try? data.write(to: resumeURL, options: .atomic) }
         else { try? FileManager.default.removeItem(at: resumeURL) }
     }
-
     private func finish(_ result: Result<URL, Error>) {
         guard !finished, let continuation else { return }
         finished = true
@@ -136,7 +134,6 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
         session = nil
         continuation.resume(with: result)
     }
-
     enum DownloadError: LocalizedError {
         case http(Int), missingFile
         var errorDescription: String? {

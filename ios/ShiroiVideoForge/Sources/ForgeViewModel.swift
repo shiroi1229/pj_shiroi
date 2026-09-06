@@ -11,6 +11,7 @@ final class ForgeViewModel: ObservableObject {
     @Published var motionStrength = 0.26
     @Published var seedText = "1229"
     @Published var temporalMode: TemporalMode = .dissolve
+    @Published var computePolicy: InferenceComputePolicy = .automatic
     @Published var status = "Ready"
     @Published var progress = 0.0
     @Published var isBusy = false
@@ -95,7 +96,7 @@ final class ForgeViewModel: ObservableObject {
             negativePrompt: negativePrompt.trimmingCharacters(in: .whitespacesAndNewlines),
             duration: duration, fps: fps, width: 512, height: 512,
             seed: UInt32(seedText) ?? 1229, quality: quality,
-            motionStrength: Float(motionStrength), bitrate: profile.bitrate, temporalMode: temporalMode)
+            motionStrength: Float(motionStrength), bitrate: profile.bitrate, temporalMode: temporalMode, computePolicy: computePolicy)
         do { try request.validatedFrameCount() }
         catch { errorMessage = error.localizedDescription; return }
         let id = begin("Starting on-device generation")
@@ -123,7 +124,6 @@ final class ForgeViewModel: ObservableObject {
             }
         }
     }
-    /// Also cancels installation; its URLSession task preserves resumable state.
     func cancelGeneration() {
         guard isBusy else { return }
         generationTask?.cancel(); status = "Cancelling…"

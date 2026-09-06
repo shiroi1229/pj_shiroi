@@ -26,7 +26,6 @@ actor VideoForgeEngine {
         let composition = try await composer.compose(keyframes: generated, request: request, capabilities: capabilities) { value, message in
             progress(0.78 + value * 0.20, message)
         }
-        // Also clean completed temporary movies if cancellation/persistence fails afterwards.
         defer { try? FileManager.default.removeItem(at: composition.url) }
         let metalEncodeSeconds = ProcessInfo.processInfo.systemUptime - metalStart
         try Task.checkCancellation()
@@ -42,7 +41,8 @@ actor VideoForgeEngine {
             outputFrames: outputFrames, fps: request.fps, quality: request.quality, keyframeBackend: backendKind,
             requestedTemporalMode: request.temporalMode, actualTemporalPath: composition.temporalPath,
             memoryClass: capabilities.memoryClass, thermalBefore: thermalBefore,
-            thermalAfter: DeviceCapabilities.current().thermalState, lowPowerModeEnabled: capabilities.lowPowerModeEnabled
+            thermalAfter: DeviceCapabilities.current().thermalState, lowPowerModeEnabled: capabilities.lowPowerModeEnabled,
+            requestedComputePolicy: request.computePolicy
         )
         return GenerationResult(url: finalURL, metrics: metrics)
     }

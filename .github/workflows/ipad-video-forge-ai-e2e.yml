@@ -1,0 +1,53 @@
+name: iPad Video Forge Real AI E2E
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiVideoForge/**'
+      - '.github/workflows/ipad-video-forge-ai-e2e.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: video-forge-ai-e2e-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-ai:
+    runs-on: macos-15
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: ios/ShiroiVideoForge
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select supported Xcode
+        run: bash scripts/select_xcode.sh
+      - name: Verify the full artifact against native app pins
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python3 scripts/verify_model_archive.py "$RUNNER_TEMP/forge-model" output/model-archive.json
+      - name: Build the production inference and compositor sources for a macOS probe
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_e2e_package.py "$RUNNER_TEMP/forge-e2e"
+          swift build --package-path "$RUNNER_TEMP/forge-e2e" -c release 2>&1 | tee output/e2e-build.log
+          cp "$RUNNER_TEMP/forge-e2e/source-hashes.json" output/
+      - name: Predict real AI keyframes and validate video export and decoding
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/forge-e2e/.build/release/ForgeE2E" \
+            "$(cat "$RUNNER_TEMP/forge-model/resource-path.txt")" output/ai 2>&1 | tee output/ai-e2e.log
+      - name: Preserve exact source and evidence
+        if: always()
+        run: |
+          mkdir -p output
+          git -C ../.. archive --format=tar HEAD ios/ShiroiVideoForge .github/workflows > output/tested-source.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-ai-e2e-${{ github.run_id }}
+          path: ios/ShiroiVideoForge/output/
+          retention-days: 7

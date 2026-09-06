@@ -21,34 +21,25 @@ struct GenerationMetrics: Sendable {
     let thermalBefore: String
     let thermalAfter: String
     let lowPowerModeEnabled: Bool
+    let requestedComputePolicy: InferenceComputePolicy
 
     var inferenceSeconds: Double { coreMLSeconds }
-
-    var outputMegabytes: Double {
-        Double(outputBytes) / 1_048_576.0
-    }
-
+    var outputMegabytes: Double { Double(outputBytes) / 1_048_576.0 }
     var encodeFramesPerSecond: Double {
         guard metalEncodeSeconds > 0 else { return 0 }
         return Double(outputFrames) / metalEncodeSeconds
     }
-
     var inferenceSecondsPerKeyframe: Double {
         guard keyframes > 0 else { return 0 }
         return inferenceSeconds / Double(keyframes)
     }
-
-    var coreMLSecondsPerKeyframe: Double {
-        inferenceSecondsPerKeyframe
-    }
-
+    var coreMLSecondsPerKeyframe: Double { inferenceSecondsPerKeyframe }
     var realtimeFactor: Double {
         let videoSeconds = Double(outputFrames) / Double(max(fps, 1))
         guard videoSeconds > 0 else { return 0 }
         return totalSeconds / videoSeconds
     }
 }
-
 struct GenerationResult: Sendable {
     let url: URL
     let metrics: GenerationMetrics
