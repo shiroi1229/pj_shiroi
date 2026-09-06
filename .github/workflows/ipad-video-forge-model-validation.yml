@@ -1,0 +1,48 @@
+name: iPad Video Forge Model Validation
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiVideoForge/Sources/ModelManifest.swift'
+      - 'ios/ShiroiVideoForge/Tests/ModelLoadProbe.swift'
+      - 'ios/ShiroiVideoForge/scripts/verify_model_archive.py'
+      - '.github/workflows/ipad-video-forge-model-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: video-forge-model-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  complete-model:
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ios/ShiroiVideoForge
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select supported Xcode
+        run: bash scripts/select_xcode.sh
+      - name: Download complete model, verify SHA-256 and ZIP CRC
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python3 scripts/verify_model_archive.py "$RUNNER_TEMP/forge-model" output/model-archive.json
+      - name: Load actual compiled models with Core ML on macOS CPU
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 Sources/ModelManifest.swift Tests/ModelLoadProbe.swift -o "$RUNNER_TEMP/model-probe"
+          "$RUNNER_TEMP/model-probe" "$(cat "$RUNNER_TEMP/forge-model/resource-path.txt")" output/model-load.json
+      - name: Preserve exact tested source snapshot
+        if: always()
+        run: git -C ../.. archive --format=tar HEAD ios/ShiroiVideoForge .github/workflows > output/tested-source.tar
+      - name: Preserve evidence only, never model weights or credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-validation-${{ github.run_id }}
+          path: ios/ShiroiVideoForge/output/
+          retention-days: 7
