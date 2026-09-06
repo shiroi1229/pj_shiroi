@@ -3,6 +3,7 @@ import Foundation
 @main
 enum DownloadTests {
     static func main() async throws {
+        setbuf(stdout, nil)
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("download-tests-\(UUID().uuidString)")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -16,13 +17,24 @@ enum DownloadTests {
         before.cancel()
         do { _ = try await before.value; throw Failure.failed("pre-cancel completed") }
         catch is CancellationError { print("PASS cancel before task startup") }
-        let mid = Task { try await downloader("resume").download(from: source) }
-        try await Task.sleep(for: .milliseconds(250))
-        mid.cancel()
+        let (events, signal) = AsyncStream<Double>.makeStream()
+        let attempt = ArchiveDownloader(destination: root.appendingPathComponent("resume.zip"),
+            resumeURL: root.appendingPathComponent("resume.resume"), progress: { fraction, _ in
+                if fraction >= 0.125 { signal.yield(fraction) }
+            })
+        let mid = Task { try await attempt.download(from: source) }
+        let timeout = Task {
+            do { try await Task.sleep(for: .seconds(20)); mid.cancel(); signal.finish() }
+            catch { }
+        }
+        var received = false
+        for await _ in events { received = true; mid.cancel(); break }
+        signal.finish(); timeout.cancel()
+        guard received else { throw Failure.failed("fixture never delivered data") }
         do { _ = try await mid.value; throw Failure.failed("mid-cancel completed") }
-        catch is CancellationError { print("PASS in-flight cancel") }
+        catch is CancellationError { print("PASS in-flight cancel after receiving data") }
         guard let data = try? Data(contentsOf: root.appendingPathComponent("resume.resume")), !data.isEmpty else {
-            throw Failure.failed("resumable fixture produced no resume data")
+            throw Failure.failed("resumable fixture produced no resume data after body receipt")
         }
         print("PASS opaque resume data saved")
         let file = try await downloader("resume").download(from: source)

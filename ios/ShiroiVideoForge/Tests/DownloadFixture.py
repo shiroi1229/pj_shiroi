@@ -3,6 +3,7 @@ import time
 
 SIZE = 8 * 1024 * 1024
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
     def log_message(self, *args): pass
     def do_GET(self):
         if self.path != '/model.bin':

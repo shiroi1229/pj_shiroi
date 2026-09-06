@@ -35,6 +35,7 @@ jobs:
           sleep 1
           "$RUNNER_TEMP/download-tests" | tee output/download-tests.log
       - name: Compile and run native GPU and video diagnostic on CI host
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           swiftc -swift-version 5 -target arm64-apple-macos15.0 Sources/GenerationRequest.swift \
