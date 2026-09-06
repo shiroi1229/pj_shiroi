@@ -22,10 +22,30 @@ RUN_ID=$(python3 -c 'import uuid; print(str(uuid.uuid4()).upper())')
 UDID=$(xcrun simctl create "Shiroi-POC-$RUN_ID" "$TYPE" "$RUNTIME")
 BUNDLE=com.shiroi1229.ShiroiVideoForge
 REC_PID=""
+APP_DATA=""
+export RUN_ID
 cleanup() {
+  local exit_status=$?
+  # Preserve this run's partial evidence before deleting the dedicated simulator.
+  # This does not create a pass marker or replace the checks below.
+  if [ -n "$APP_DATA" ]; then
+    export APP_DATA
+    python3 - <<'KEEP' || true
+import os,shutil
+from pathlib import Path
+base=Path(os.environ['APP_DATA'])/'Documents/VisiblePOC'
+run=os.environ['RUN_ID']
+for folder in [base/run,base/'.pending'/run]:
+    if folder.is_dir():
+        for name in ['poc-result.json','poc-video.mov','poc-poster.png','poc-reopened.json','poc-failure.json']:
+            file=folder/name
+            if file.is_file(): shutil.copy2(file,Path('output/poc')/name)
+KEEP
+  fi
   if [ -n "$REC_PID" ]; then kill -INT "$REC_PID" 2>/dev/null || true; wait "$REC_PID" 2>/dev/null || true; fi
   xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
   xcrun simctl delete "$UDID" >/dev/null 2>&1 || true
+  return "$exit_status"
 }
 trap cleanup EXIT
 xcrun simctl boot "$UDID"
@@ -57,7 +77,7 @@ wait "$REC_PID"; RECORD_EXIT=$?
 set -e
 REC_PID=""
 if [ "$RECORD_EXIT" -ne 0 ] && [ "$RECORD_EXIT" -ne 130 ]; then echo "Recording failed ($RECORD_EXIT)"; exit 1; fi
-swiftc -swift-version 5 Tests/CaptureRecordingCheck.swift -o "$RUNNER_TEMP/check-capture"
+swiftc -parse-as-library -swift-version 5 Tests/CaptureRecordingCheck.swift -o "$RUNNER_TEMP/check-capture"
 "$RUNNER_TEMP/check-capture" output/poc/app-screen-recording.mp4 output/poc/recording-check.json
 # Relaunch, without rendering: the library must recover this same saved result.
 xcrun simctl terminate "$UDID" "$BUNDLE"
