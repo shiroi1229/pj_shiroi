@@ -10,12 +10,15 @@ struct ForgeAppShell: View {
     var body: some View {
         ContentView()
             .safeAreaInset(edge: .bottom) {
-                HStack {
-                    Text("実験版：AI画像生成＋フレーム補間")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("GPU・動画出力を診断", systemImage: "checkmark.shield") { showDiagnostics = true }
-                        .disabled(model.isBusy)
+                VStack(alignment: .leading, spacing: 8) {
+                    EngineComputeControls()
+                    HStack {
+                        Text("実験版：AI画像生成＋フレーム補間")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("GPU・動画出力を診断", systemImage: "checkmark.shield") { showDiagnostics = true }
+                            .disabled(model.isBusy)
+                    }
                 }
                 .padding().background(.regularMaterial)
             }
@@ -39,6 +42,7 @@ private struct NativeDiagnosticsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var task: Task<Void, Never>?
     @State private var result: NativeDiagnosticResult?
+    @State private var player: AVPlayer?
     @State private var error: String?
     @State private var running = false
     private let capabilities = DeviceCapabilities.current()
@@ -47,8 +51,7 @@ private struct NativeDiagnosticsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("この端末で実行して検証する")
-                        .font(.title2.bold())
+                    Text("この端末で実行して検証する").font(.title2.bold())
                     Text("GPU計算をCPUの正解値と照合し、1秒の診断映像を書き出して全フレームを読み戻すよ。AIモデルは使わないので、AI動画の品質・速度の評価とは別の検査だよ。")
                     GroupBox("端末から取得した情報") {
                         VStack {
@@ -78,8 +81,7 @@ private struct NativeDiagnosticsView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 6)
                         }
-                        VideoPlayer(player: AVPlayer(url: result.videoURL))
-                            .frame(height: 260)
+                        VideoPlayer(player: player).frame(height: 260)
                         HStack {
                             ShareLink("診断レポートを共有", item: result.reportURL)
                             ShareLink("診断映像を共有", item: result.videoURL)
@@ -90,21 +92,26 @@ private struct NativeDiagnosticsView: View {
             .navigationTitle("Native Engine Diagnostics")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
         }
-        .onDisappear { task?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
+        .onDisappear { task?.cancel(); player?.pause(); player = nil; UIApplication.shared.isIdleTimerDisabled = false }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { task?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
         }
     }
-
     @MainActor private func run() {
         guard !running else { return }
         running = true; error = nil; result = nil
+        player?.pause(); player = nil
         UIApplication.shared.isIdleTimerDisabled = true
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShiroiDiagnostics/\(UUID().uuidString)", isDirectory: true)
         task = Task {
             defer { running = false; task = nil; UIApplication.shared.isIdleTimerDisabled = false }
-            do { result = try await NativeDiagnostics().run(directory: directory) }
+            do {
+                let generated = try await NativeDiagnostics().run(directory: directory)
+                try Task.checkCancellation()
+                result = generated
+                player = AVPlayer(url: generated.videoURL)
+            }
             catch is CancellationError { error = "診断を中止したよ。" }
             catch { self.error = error.localizedDescription }
         }

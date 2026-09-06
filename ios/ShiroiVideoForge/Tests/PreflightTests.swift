@@ -50,6 +50,8 @@ enum PreflightTests {
         try Data([1]).write(to: root.appendingPathComponent("merges.txt"))
         try fm.removeItem(at: root.appendingPathComponent("Unet.mlmodelc/test.bin"))
         try check("empty compiled model rejected", !ModelManifest.validateResources(at: root))
+        try check("automatic compute default", request.computePolicy == .automatic)
+        try check("four distinct compute policies", Set(InferenceComputePolicy.allCases.map(\.rawValue)).count == 4)
         print("\(passed) checks passed. No Apple SDK, model inference, or device performance is tested here.")
     }
     enum Failure: Error { case failed(String) }

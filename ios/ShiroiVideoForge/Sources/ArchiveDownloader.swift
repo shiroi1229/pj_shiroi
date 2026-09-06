@@ -1,8 +1,6 @@
 import Foundation
 
-/// One download attempt. All mutable state is confined to `stateQueue`.
-/// URLSession owns its temporary file only until the delegate returns, so it is
-/// moved synchronously there. Only opaque resume data is persisted; never logged.
+/// One download attempt. All mutable state is confined to stateQueue.
 final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let stateQueue = DispatchQueue(label: "com.shiroi1229.model-download")
     private let destination: URL
@@ -16,28 +14,19 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
     private var cancellationRequested = false
     private var finished = false
     private var lastReported = -1
-
-    init(destination: URL, resumeURL: URL,
-         progress: @escaping @Sendable (Double, String) -> Void) {
-        self.destination = destination
-        self.resumeURL = resumeURL
-        self.progress = progress
+    init(destination: URL, resumeURL: URL, progress: @escaping @Sendable (Double, String) -> Void) {
+        self.destination = destination; self.resumeURL = resumeURL; self.progress = progress
     }
-
     func download(from url: URL) async throws -> URL {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 stateQueue.async {
                     self.continuation = continuation
-                    if self.cancellationRequested {
-                        self.finish(.failure(CancellationError()))
-                        return
-                    }
+                    if self.cancellationRequested { self.finish(.failure(CancellationError())); return }
                     let config = URLSessionConfiguration.default
                     config.timeoutIntervalForRequest = 120
                     config.timeoutIntervalForResource = 7 * 24 * 3600
-                    config.waitsForConnectivity = true
-                    config.urlCache = nil
+                    config.waitsForConnectivity = true; config.urlCache = nil
                     let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
                     self.session = session
                     if let data = try? Data(contentsOf: self.resumeURL), !data.isEmpty {
@@ -50,43 +39,42 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
                     self.task?.resume()
                 }
             }
-        } onCancel: {
-            self.cancel()
-        }
+        } onCancel: { self.cancel() }
     }
-
     private func cancel() {
         stateQueue.async {
             guard !self.finished, !self.cancellationRequested else { return }
             self.cancellationRequested = true
             guard let task = self.task else { return }
+            if task.state == .completed { self.finish(.failure(CancellationError())); return }
+            self.stateQueue.asyncAfter(deadline: .now() + 2) {
+                guard !self.finished else { return }
+                self.session?.invalidateAndCancel()
+                self.finish(.failure(CancellationError()))
+            }
             task.cancel(byProducingResumeData: { data in
                 self.stateQueue.async {
-                    self.storeResume(data)
+                    // A late callback must not overwrite a newer retry's resume state.
+                    guard !self.finished else { return }
+                    if let data, !data.isEmpty { self.storeResume(data) }
                     self.finish(.failure(CancellationError()))
                 }
             })
         }
     }
-
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
-                    totalBytesExpectedToWrite: Int64) {
+                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         stateQueue.async {
             guard !self.finished, !self.cancellationRequested else { return }
-            let fraction = totalBytesExpectedToWrite > 0
-                ? min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)) : 0
+            let fraction = totalBytesExpectedToWrite > 0 ? min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)) : 0
             let percent = Int(fraction * 100)
             guard percent != self.lastReported else { return }
             self.lastReported = percent
-            let mb = Double(totalBytesWritten) / 1_000_000
-            self.progress(fraction, String(format: "Model download • %.0f MB • %d%%", mb, percent))
+            self.progress(fraction, String(format: "Model download • %.0f MB • %d%%", Double(totalBytesWritten) / 1_000_000, percent))
         }
     }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didFinishDownloadingTo location: URL) {
-        // Do not defer the move: URLSession removes `location` after this returns.
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        // URLSession removes the temporary location after this delegate returns.
         stateQueue.sync {
             guard !finished else { return }
             do {
@@ -96,47 +84,31 @@ final class ArchiveDownloader: NSObject, URLSessionDownloadDelegate, @unchecked 
                 }
                 let fm = FileManager.default
                 if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
-                try fm.moveItem(at: location, to: destination)
-                movedFile = destination
+                try fm.moveItem(at: location, to: destination); movedFile = destination
             } catch { fileError = error }
         }
     }
-
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         stateQueue.async {
-            guard !self.finished else { return }
-            guard !self.cancellationRequested else { return }
+            guard !self.finished, !self.cancellationRequested else { return }
             if let error {
-                let data = (error as NSError).userInfo["NSURLSessionDownloadTaskResumeData"] as? Data
-                self.storeResume(data)
+                self.storeResume((error as NSError).userInfo["NSURLSessionDownloadTaskResumeData"] as? Data)
                 self.finish(.failure(error))
-            } else if let error = self.fileError {
-                self.storeResume(nil)
-                self.finish(.failure(error))
-            } else if let url = self.movedFile {
-                self.storeResume(nil)
-                self.finish(.success(url))
-            } else {
-                self.finish(.failure(DownloadError.missingFile))
-            }
+            } else if let error = self.fileError { self.storeResume(nil); self.finish(.failure(error)) }
+            else if let url = self.movedFile { self.storeResume(nil); self.finish(.success(url)) }
+            else { self.finish(.failure(DownloadError.missingFile)) }
         }
     }
-
     private func storeResume(_ data: Data?) {
         if let data, !data.isEmpty { try? data.write(to: resumeURL, options: .atomic) }
         else { try? FileManager.default.removeItem(at: resumeURL) }
     }
-
     private func finish(_ result: Result<URL, Error>) {
         guard !finished, let continuation else { return }
-        finished = true
-        self.continuation = nil
-        task = nil
-        session?.finishTasksAndInvalidate()
-        session = nil
+        finished = true; self.continuation = nil; task = nil
+        session?.finishTasksAndInvalidate(); session = nil
         continuation.resume(with: result)
     }
-
     enum DownloadError: LocalizedError {
         case http(Int), missingFile
         var errorDescription: String? {

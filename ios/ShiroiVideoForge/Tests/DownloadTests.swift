@@ -8,7 +8,7 @@ enum DownloadTests {
         let root = fm.temporaryDirectory.appendingPathComponent("download-tests-\(UUID().uuidString)")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
-        let source = URL(string: "http://127.0.0.1:18764/model.bin")!
+        let source = URL(string: "http://localhost:18764/model.bin")!
         func downloader(_ name: String) -> ArchiveDownloader {
             ArchiveDownloader(destination: root.appendingPathComponent(name + ".zip"),
                 resumeURL: root.appendingPathComponent(name + ".resume"), progress: { _, _ in })
@@ -26,7 +26,6 @@ enum DownloadTests {
             defer { signal.finish() }
             do { return try await attempt.download(from: source) }
             catch {
-                // Fixture-only diagnostics; never print opaque resume data or remote URLs.
                 let ns = error as NSError
                 print("Fixture transfer ended: \(ns.domain) code \(ns.code)")
                 throw error
@@ -40,7 +39,7 @@ enum DownloadTests {
         for await _ in events { received = true; mid.cancel(); break }
         signal.finish(); timeout.cancel()
         if !received {
-            _ = try await mid.value // Surface the actual transport error, not a stream timeout.
+            _ = try await mid.value
             throw Failure.failed("fixture never delivered progress")
         }
         do { _ = try await mid.value; throw Failure.failed("mid-cancel completed") }
@@ -60,7 +59,7 @@ enum DownloadTests {
         }
         print("PASS resume state removed after success")
         do {
-            _ = try await downloader("404").download(from: URL(string: "http://127.0.0.1:18764/missing")!)
+            _ = try await downloader("404").download(from: URL(string: "http://localhost:18764/missing")!)
             throw Failure.failed("HTTP 404 accepted")
         } catch ArchiveDownloader.DownloadError.http(404) { print("PASS HTTP 404 rejected") }
         let abc = root.appendingPathComponent("hash-fixture")
