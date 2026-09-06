@@ -2,6 +2,10 @@
 # Dedicated simulator and exact operation ID: old output cannot pass this run.
 set -euo pipefail
 mkdir -p output/poc
+# AVFoundation on the CI Mac rejected simctl's VFR capture (-12906). Validate
+# that independent capture with a full software decode; the app still verifies
+# its own HEVC output through AVFoundation on the iPad Simulator.
+if ! command -v ffprobe >/dev/null || ! command -v ffmpeg >/dev/null; then brew install ffmpeg; fi
 xcrun simctl list devices available --json > output/poc/simulator-devices.json
 read -r TYPE RUNTIME < <(python3 - <<'PY'
 import json
@@ -26,8 +30,6 @@ APP_DATA=""
 export RUN_ID
 cleanup() {
   local exit_status=$?
-  # Preserve this run's partial evidence before deleting the dedicated simulator.
-  # This does not create a pass marker or replace the checks below.
   if [ -n "$APP_DATA" ]; then
     export APP_DATA
     python3 - <<'KEEP' || true
@@ -77,9 +79,28 @@ wait "$REC_PID"; RECORD_EXIT=$?
 set -e
 REC_PID=""
 if [ "$RECORD_EXIT" -ne 0 ] && [ "$RECORD_EXIT" -ne 130 ]; then echo "Recording failed ($RECORD_EXIT)"; exit 1; fi
-swiftc -parse-as-library -swift-version 5 Tests/CaptureRecordingCheck.swift -o "$RUNNER_TEMP/check-capture"
-"$RUNNER_TEMP/check-capture" output/poc/app-screen-recording.mp4 output/poc/recording-check.json
-# Relaunch, without rendering: the library must recover this same saved result.
+ffprobe -v error -select_streams v:0 -count_frames \
+  -show_entries stream=codec_name,width,height,nb_read_frames:format=duration,size \
+  -of json output/poc/app-screen-recording.mp4 > output/poc/recording-probe.json
+ffmpeg -v error -xerror -i output/poc/app-screen-recording.mp4 \
+  -map 0:v:0 -fps_mode passthrough -enc_time_base demux -f null - 2> output/poc/recording-decode.log
+python3 - <<'PY'
+import json,math
+from pathlib import Path
+probe=json.loads(Path('output/poc/recording-probe.json').read_text())
+stream=probe['streams'][0]
+duration=float(probe['format']['duration']); frames=int(stream['nb_read_frames'])
+assert math.isfinite(duration) and 3 < duration < 480
+assert frames > 12 and stream['width'] > 0 and stream['height'] > 0
+assert not Path('output/poc/recording-decode.log').read_text().strip(), 'Decoder reported an error'
+Path('output/poc/recording-check.json').write_text(json.dumps({
+    'container_and_full_pixel_decode':'passed','decoded_frames':frames,
+    'duration_seconds':duration,'method':'ffprobe count_frames + ffmpeg full decode',
+    'timing':'original variable-frame-rate timestamps; no speed change'
+},indent=2))
+print(f'PASS real screen recording: {frames} decoded frames; {duration}s')
+PY
+# Relaunch, without rendering: restore this exact saved result.
 xcrun simctl terminate "$UDID" "$BUNDLE"
 xcrun simctl launch "$UDID" "$BUNDLE" --poc-library-check > output/poc/reopen.log
 python3 - <<'PY'
