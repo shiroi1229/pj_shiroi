@@ -28,11 +28,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output
-          swiftc -swift-version 5 Sources/ArchiveDownloader.swift Sources/ArchiveIntegrity.swift Tests/DownloadTests.swift -o "$RUNNER_TEMP/download-tests"
-          python3 Tests/DownloadFixture.py &
+          # Permit only loopback HTTP in the test executable; app ATS stays unchanged.
+          swiftc -swift-version 5 Sources/ArchiveDownloader.swift Sources/ArchiveIntegrity.swift Tests/DownloadTests.swift \
+            -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Tests/FixtureInfo.plist \
+            -o "$RUNNER_TEMP/download-tests"
+          python3 -u Tests/DownloadFixture.py > output/fixture-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           sleep 1
+          curl --fail --silent --noproxy '*' --range 0-1023 http://127.0.0.1:18764/model.bin -o /dev/null
           "$RUNNER_TEMP/download-tests" | tee output/download-tests.log
       - name: Compile and run native GPU and video diagnostic on CI host
         if: ${{ !cancelled() }}

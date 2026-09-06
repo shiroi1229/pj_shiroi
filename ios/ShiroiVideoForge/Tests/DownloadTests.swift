@@ -22,7 +22,16 @@ enum DownloadTests {
             resumeURL: root.appendingPathComponent("resume.resume"), progress: { fraction, _ in
                 if fraction >= 0.125 { signal.yield(fraction) }
             })
-        let mid = Task { try await attempt.download(from: source) }
+        let mid = Task {
+            defer { signal.finish() }
+            do { return try await attempt.download(from: source) }
+            catch {
+                // Fixture-only diagnostics; never print opaque resume data or remote URLs.
+                let ns = error as NSError
+                print("Fixture transfer ended: \(ns.domain) code \(ns.code)")
+                throw error
+            }
+        }
         let timeout = Task {
             do { try await Task.sleep(for: .seconds(20)); mid.cancel(); signal.finish() }
             catch { }
@@ -30,7 +39,10 @@ enum DownloadTests {
         var received = false
         for await _ in events { received = true; mid.cancel(); break }
         signal.finish(); timeout.cancel()
-        guard received else { throw Failure.failed("fixture never delivered data") }
+        if !received {
+            _ = try await mid.value // Surface the actual transport error, not a stream timeout.
+            throw Failure.failed("fixture never delivered progress")
+        }
         do { _ = try await mid.value; throw Failure.failed("mid-cancel completed") }
         catch is CancellationError { print("PASS in-flight cancel after receiving data") }
         guard let data = try? Data(contentsOf: root.appendingPathComponent("resume.resume")), !data.isEmpty else {
