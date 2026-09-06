@@ -1,0 +1,82 @@
+name: Forge CLIP Preprocessing Hypothesis
+on:
+  pull_request:
+    paths: ['.github/workflows/forge-clip-preprocessing-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: forge-clip-hypothesis-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  controlled-probe:
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ios/ShiroiVideoForge
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select supported SDK
+        run: bash scripts/select_xcode.sh
+      - name: Verify the same immutable model archive
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python3 scripts/verify_model_archive.py "$RUNNER_TEMP/forge-model" output/model-archive.json
+      - name: Prepare isolated SDK preprocessing experiment
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_e2e_package.py "$RUNNER_TEMP/forge-e2e"
+          swift package --package-path "$RUNNER_TEMP/forge-e2e" resolve
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          package=Path(os.environ['RUNNER_TEMP'])/'forge-e2e'
+          matches=list((package/'.build/checkouts').glob('*/swift/StableDiffusion/pipeline/SafetyChecker.swift'))
+          if len(matches)!=1: raise SystemExit('Unexpected SDK checkout layout')
+          file=matches[0]; before=file.read_bytes()
+          git_hash=hashlib.sha1(b'blob '+str(len(before)).encode()+b'\0'+before).hexdigest()
+          if git_hash!='fdc615e82778c1c3aa5a934aa26b622cfb8d2dc7': raise SystemExit('SDK safety source differs from verified baseline')
+          source=before.decode()
+          replacements={
+            'let means = [0.485, 0.456, 0.406] as [Float]':
+            'let means = [0.48145466, 0.4578275, 0.40821073] as [Float]',
+            'let stds  = [0.229, 0.224, 0.225] as [Float]':
+            'let stds  = [0.26862954, 0.26130258, 0.27577711] as [Float]'
+          }
+          for old,new in replacements.items():
+              if source.count(old)!=1: raise SystemExit('Expected one normalization declaration')
+              source=source.replace(old,new)
+          file.write_text(source)
+          report={'experiment':'CLIP input normalization only; NOT the production SDK',
+                  'baseline_app_commit':'8db154fac167d4910b047592aef0e395709cbc30',
+                  'baseline_run':34008116873,'baseline_outcome':'safetyFiltered',
+                  'config_source':'https://huggingface.co/CompVis/stable-diffusion-safety-checker/blob/main/preprocessor_config.json',
+                  'sdk_before_sha256':hashlib.sha256(before).hexdigest(),
+                  'sdk_after_sha256':hashlib.sha256(file.read_bytes()).hexdigest(),
+                  'thresholds_modified':False,'safety_disabled':False,
+                  'weights_modified':False,'recipe_modified':False,
+                  'production_app_modified':False,'physical_ipad_tested':False}
+          Path('output/experiment.json').write_text(json.dumps(report,indent=2))
+          PY
+          swift build --package-path "$RUNNER_TEMP/forge-e2e" -c release 2>&1 | tee output/probe-build.log
+      - name: Run unchanged landscape recipe with the experimental SDK
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/forge-e2e/.build/release/ForgeE2E" \
+            "$(cat "$RUNNER_TEMP/forge-model/resource-path.txt")" output/experimental-ai 2>&1 | tee output/probe.log
+      - name: Preserve traceable experiment artifacts regardless of outcome
+        if: always()
+        run: |
+          mkdir -p output
+          git -C ../.. archive --format=tar HEAD ios/ShiroiVideoForge .github/workflows/forge-clip-preprocessing-probe.yml > output/tested-source.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clip-preprocessing-probe-${{ github.run_id }}
+          path: ios/ShiroiVideoForge/output/
+          retention-days: 7
