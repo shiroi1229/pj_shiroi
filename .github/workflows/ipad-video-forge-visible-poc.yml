@@ -1,0 +1,64 @@
+name: iPad Video Forge Visible POC
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiVideoForge/Sources/VisiblePOC*'
+      - 'ios/ShiroiVideoForge/Tests/POCStoreTests.swift'
+      - 'ios/ShiroiVideoForge/Tests/CaptureRecordingCheck.swift'
+      - 'ios/ShiroiVideoForge/Sources/IdleTimerCoordinator.swift'
+      - 'ios/ShiroiVideoForge/Sources/ForgeAppShell.swift'
+      - 'ios/ShiroiVideoForge/Sources/ShiroiVideoForgeApp.swift'
+      - 'ios/ShiroiVideoForge/scripts/capture_poc.sh'
+      - '.github/workflows/ipad-video-forge-visible-poc.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: video-forge-visible-poc-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  visible-poc:
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ios/ShiroiVideoForge
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select stable Xcode
+        run: bash scripts/select_xcode.sh
+      - name: Validate storage and bounded output profiles
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          swiftc -swift-version 5 Sources/VisiblePOCModels.swift Sources/VisiblePOCStore.swift Tests/POCStoreTests.swift -o "$RUNNER_TEMP/poc-store-tests"
+          "$RUNNER_TEMP/poc-store-tests" | tee output/poc-store-tests.log
+      - name: Generate native Xcode project
+        run: |
+          set -euo pipefail
+          python3 scripts/create_app_icon.py
+          brew install xcodegen
+          xcodegen generate
+      - name: Compile actual iPad simulator application
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          xcodebuild -project ShiroiVideoForge.xcodeproj -scheme ShiroiVideoForge \
+            -configuration Release -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-poc CODE_SIGNING_ALLOWED=NO build 2>&1 | tee output/simulator-build.log
+      - name: Launch, render, decode and capture the native POC
+        run: bash scripts/capture_poc.sh
+      - name: Preserve source and visible POC evidence
+        if: always()
+        run: |
+          mkdir -p output
+          git -C ../.. archive --format=tar HEAD ios/ShiroiVideoForge .github/workflows > output/tested-source.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visible-native-poc-${{ github.run_id }}
+          path: ios/ShiroiVideoForge/output/
+          retention-days: 7

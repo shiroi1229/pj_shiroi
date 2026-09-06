@@ -5,6 +5,7 @@ import UIKit
 struct ForgeAppShell: View {
     @EnvironmentObject private var model: ForgeViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @State private var idleOwner = UUID()
     @State private var showDiagnostics = false
 
     var body: some View {
@@ -21,14 +22,14 @@ struct ForgeAppShell: View {
             }
             .sheet(isPresented: $showDiagnostics) { NativeDiagnosticsView() }
             .onChange(of: model.isBusy) { _, busy in
-                UIApplication.shared.isIdleTimerDisabled = busy
+                IdleTimerCoordinator.shared.setActive(owner: idleOwner, active: busy)
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background {
                     model.cancelGeneration()
-                    UIApplication.shared.isIdleTimerDisabled = false
+                    IdleTimerCoordinator.shared.setActive(owner: idleOwner, active: false)
                 } else if phase == .active {
-                    UIApplication.shared.isIdleTimerDisabled = model.isBusy
+                    IdleTimerCoordinator.shared.setActive(owner: idleOwner, active: model.isBusy)
                 }
             }
     }
@@ -37,6 +38,7 @@ struct ForgeAppShell: View {
 private struct NativeDiagnosticsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @State private var idleOwner = UUID()
     @State private var task: Task<Void, Never>?
     @State private var result: NativeDiagnosticResult?
     @State private var error: String?
@@ -47,8 +49,7 @@ private struct NativeDiagnosticsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("この端末で実行して検証する")
-                        .font(.title2.bold())
+                    Text("この端末で実行して検証する").font(.title2.bold())
                     Text("GPU計算をCPUの正解値と照合し、1秒の診断映像を書き出して全フレームを読み戻すよ。AIモデルは使わないので、AI動画の品質・速度の評価とは別の検査だよ。")
                     GroupBox("端末から取得した情報") {
                         VStack {
@@ -78,8 +79,7 @@ private struct NativeDiagnosticsView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 6)
                         }
-                        VideoPlayer(player: AVPlayer(url: result.videoURL))
-                            .frame(height: 260)
+                        VideoPlayer(player: AVPlayer(url: result.videoURL)).frame(height: 260)
                         HStack {
                             ShareLink("診断レポートを共有", item: result.reportURL)
                             ShareLink("診断映像を共有", item: result.videoURL)
@@ -90,20 +90,19 @@ private struct NativeDiagnosticsView: View {
             .navigationTitle("Native Engine Diagnostics")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
         }
-        .onDisappear { task?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
+        .onDisappear { task?.cancel(); IdleTimerCoordinator.shared.setActive(owner: idleOwner, active: false) }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { task?.cancel(); UIApplication.shared.isIdleTimerDisabled = false }
+            if phase == .background { task?.cancel(); IdleTimerCoordinator.shared.setActive(owner: idleOwner, active: false) }
         }
     }
-
     @MainActor private func run() {
         guard !running else { return }
         running = true; error = nil; result = nil
-        UIApplication.shared.isIdleTimerDisabled = true
+        IdleTimerCoordinator.shared.setActive(owner: idleOwner, active: true)
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShiroiDiagnostics/\(UUID().uuidString)", isDirectory: true)
         task = Task {
-            defer { running = false; task = nil; UIApplication.shared.isIdleTimerDisabled = false }
+            defer { running = false; task = nil; IdleTimerCoordinator.shared.setActive(owner: idleOwner, active: false) }
             do { result = try await NativeDiagnostics().run(directory: directory) }
             catch is CancellationError { error = "診断を中止したよ。" }
             catch { self.error = error.localizedDescription }
