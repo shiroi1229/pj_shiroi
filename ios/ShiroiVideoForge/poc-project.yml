@@ -1,0 +1,39 @@
+name: ShiroiVideoPOC
+options:
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+# No third-party packages and no Core ML models in this dedicated GPU POC.
+targets:
+  ShiroiVideoPOC:
+    type: application
+    platform: iOS
+    sources:
+      - POCApp/VideoPOCApp.swift
+      - Sources/VisiblePOCView.swift
+      - Sources/VisiblePOCViewModel.swift
+      - Sources/VisiblePOCModels.swift
+      - Sources/VisiblePOCStore.swift
+      - Sources/VisiblePOCRenderer.swift
+      - Sources/VisiblePOC.metal
+      - Sources/IdleTimerCoordinator.swift
+      - Sources/PrivacyInfo.xcprivacy
+      - Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shiroi1229.ShiroiVideoForge
+        PRODUCT_NAME: Shiroi Video Forge
+        INFOPLIST_KEY_CFBundleDisplayName: Shiroi Video POC
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTS_MACCATALYST: NO
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

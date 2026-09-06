@@ -1,0 +1,68 @@
+name: Standalone Native iPad Video POC
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiVideoForge/POCApp/**'
+      - 'ios/ShiroiVideoForge/poc-project.yml'
+      - 'ios/ShiroiVideoForge/Sources/VisiblePOC*'
+      - 'ios/ShiroiVideoForge/Sources/IdleTimerCoordinator.swift'
+      - 'ios/ShiroiVideoForge/scripts/capture_standalone_poc.sh'
+      - '.github/workflows/ipad-video-forge-standalone.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: standalone-native-poc-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-app:
+    runs-on: macos-15
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: ios/ShiroiVideoForge
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare supported SDK and dependency-free project
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          bash scripts/select_xcode.sh
+          python3 scripts/create_app_icon.py
+          brew install xcodegen
+          xcodegen generate --spec poc-project.yml
+      - name: Build native iPad Release for eventual authorized signing
+        run: |
+          set -euo pipefail
+          xcodebuild -project ShiroiVideoPOC.xcodeproj -scheme ShiroiVideoPOC \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device CODE_SIGNING_ALLOWED=NO build 2>&1 | tee output/device-build.log
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          Path('output/device-build.json').write_text(json.dumps({'source_commit':os.environ['GITHUB_SHA'],
+            'native_ipad_compile':'passed','signature':'absent','installable_on_ipad':False,
+            'ai_video_generation':False,'external_packages':0},indent=2))
+          PY
+      - name: Build real iPad simulator application
+        run: |
+          set -euo pipefail
+          xcodebuild -project ShiroiVideoPOC.xcodeproj -scheme ShiroiVideoPOC \
+            -configuration Release -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-standalone ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build 2>&1 | tee output/simulator-build.log
+      - name: Verify direct app launch, GPU movie export and history restoration
+        run: bash scripts/capture_standalone_poc.sh
+      - name: Preserve evidence, not an installable IPA
+        if: always()
+        run: |
+          mkdir -p output
+          git -C ../.. archive --format=tar HEAD ios/ShiroiVideoForge .github/workflows > output/tested-source.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: standalone-ipad-poc-${{ github.run_id }}
+          path: ios/ShiroiVideoForge/output/
+          retention-days: 7
