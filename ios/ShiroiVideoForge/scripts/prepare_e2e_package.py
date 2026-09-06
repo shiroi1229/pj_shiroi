@@ -12,7 +12,7 @@ project = (root / 'project.yml').read_text()
 revision = re.search(r'StableDiffusion:\s*url: https://github.com/apple/ml-stable-diffusion.git\s*revision: ([0-9a-f]{40})', project).group(1)
 zip_version = re.search(r'ZIPFoundation:\s*url: https://github.com/weichsel/ZIPFoundation.git\s*from: ([\d.]+)', project).group(1)
 work = Path(sys.argv[1]); sources = work / 'Sources' / 'ForgeE2E'; sources.mkdir(parents=True, exist_ok=True)
-names = ['GenerationRequest.swift', 'DeviceCapabilities.swift', 'KeyframeBackend.swift', 'KeyframeGenerator.swift',
+names = ['InferenceNumerics.swift', 'GenerationRequest.swift', 'DeviceCapabilities.swift', 'KeyframeBackend.swift', 'KeyframeGenerator.swift',
          'ModelManifest.swift', 'ModelManager.swift', 'ArchiveDownloader.swift', 'ArchiveIntegrity.swift',
          'MetalVideoComposer.swift', 'OpticalFlowInterpolator.swift']
 hashes = {}

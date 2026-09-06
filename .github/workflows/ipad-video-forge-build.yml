@@ -38,6 +38,8 @@ jobs:
           mkdir -p output
           swiftc -swift-version 5 Sources/GenerationRequest.swift Sources/ModelManifest.swift Tests/PreflightTests.swift -o "$RUNNER_TEMP/forge-preflight"
           "$RUNNER_TEMP/forge-preflight" | tee output/preflight-tests.log
+          swiftc -swift-version 5 Sources/InferenceNumerics.swift Tests/InferenceNumericsTests.swift -o "$RUNNER_TEMP/numerics-tests"
+          "$RUNNER_TEMP/numerics-tests" | tee output/numerics-tests.log
       - name: Check pinned model endpoint without downloading weights
         run: |
           set -euo pipefail
@@ -80,7 +82,6 @@ jobs:
           retention-days: 7
 
   signing-readiness:
-    # Never expose signing material to pull-request code. Check presence, not values.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     steps:
