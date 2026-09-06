@@ -7,6 +7,9 @@ enum ModelManifest {
     static let downloadURL = URL(string:
         "https://huggingface.co/apple/coreml-stable-diffusion-v1-5-palettized/resolve/\(revision)/\(archiveName)"
     )!
+    static let archiveBytes: Int64 = 1_565_721_769
+    // Verified against the complete pinned upstream artifact in CI run 34004454022.
+    static let archiveSHA256 = "49a6ac1f62e12a2b3e426730d686fa466e30cba11c03b85305775714fb9814ec"
     static let requiredDirectories = [
         "SafetyChecker.mlmodelc", "TextEncoder.mlmodelc", "Unet.mlmodelc",
         "VAEDecoder.mlmodelc", "VAEEncoder.mlmodelc"

@@ -1,0 +1,55 @@
+name: iPad Video Forge Runtime Checks
+on:
+  pull_request:
+    paths:
+      - 'ios/ShiroiVideoForge/**'
+      - '.github/workflows/ipad-video-forge-runtime.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: video-forge-runtime-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime-checks:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ios/ShiroiVideoForge
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select supported Xcode
+        run: bash scripts/select_xcode.sh
+      - name: Verify download cancellation, resume and HTTP errors
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          swiftc -swift-version 5 Sources/ArchiveDownloader.swift Sources/ArchiveIntegrity.swift Tests/DownloadTests.swift -o "$RUNNER_TEMP/download-tests"
+          python3 Tests/DownloadFixture.py &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          "$RUNNER_TEMP/download-tests" | tee output/download-tests.log
+      - name: Compile and run native GPU and video diagnostic on CI host
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -target arm64-apple-macos15.0 Sources/GenerationRequest.swift \
+            Sources/DeviceCapabilities.swift Sources/OpticalFlowInterpolator.swift Sources/MetalVideoComposer.swift \
+            Sources/NativeDiagnostics.swift Tests/NativeEngineSmoke.swift -o "$RUNNER_TEMP/native-smoke"
+          "$RUNNER_TEMP/native-smoke" output/native | tee output/native-smoke.log
+      - name: Preserve exact source snapshot and runtime evidence
+        if: always()
+        run: |
+          mkdir -p output
+          git -C ../.. archive --format=tar HEAD ios/ShiroiVideoForge .github/workflows > output/tested-source.tar
+      - name: Upload diagnostic evidence, not an installable app
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-runtime-${{ github.run_id }}
+          path: ios/ShiroiVideoForge/output/
+          retention-days: 7

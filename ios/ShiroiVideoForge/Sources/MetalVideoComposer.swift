@@ -16,6 +16,9 @@ struct CompositionResult: Sendable {
 }
 
 actor MetalVideoComposer {
+    private var activeWriters: [UUID: AVAssetWriter] = [:]
+    private func cancelWriter(_ id: UUID) { activeWriters[id]?.cancelWriting() }
+
     enum ComposerError: LocalizedError {
         case metalUnavailable, pixelBufferUnavailable, noKeyframes
         case writerFailed(String)
@@ -60,8 +63,11 @@ actor MetalVideoComposer {
 
         let output = FileManager.default.temporaryDirectory.appending(path: "ShiroiVideoForge-\(UUID().uuidString).mov")
         let writer = try AVAssetWriter(outputURL: output, fileType: .mov)
+        let writerID = UUID()
+        activeWriters[writerID] = writer
         var completed = false
         defer {
+            activeWriters.removeValue(forKey: writerID)
             if !completed {
                 writer.cancelWriting()
                 try? FileManager.default.removeItem(at: output)
@@ -136,7 +142,6 @@ actor MetalVideoComposer {
                 }
             }
             if !renderedWithFlow {
-                // Reclaim per-frame Objective-C objects without evicting reusable GPU caches.
                 autoreleasepool {
                     let imageA = animatedFit(source[a], into: extent, globalProgress: normalized, direction: 1)
                     let imageB = animatedFit(source[b], into: extent, globalProgress: normalized, direction: -1)
@@ -160,7 +165,7 @@ actor MetalVideoComposer {
         await withTaskCancellationHandler {
             await writer.finishWriting()
         } onCancel: {
-            writer.cancelWriting()
+            Task { await self.cancelWriter(writerID) }
         }
         try Task.checkCancellation()
         guard writer.status == .completed else {
@@ -181,7 +186,6 @@ actor MetalVideoComposer {
         let pan = direction * target.width * 0.018 * CGFloat(globalProgress - 0.5)
         let dx = target.midX - scaled.extent.midX + pan
         let dy = target.midY - scaled.extent.midY
-        // Clamp finite source edges before panning; otherwise opaque frames gain black borders.
         return scaled.clampedToExtent()
             .transformed(by: CGAffineTransform(translationX: dx, y: dy)).cropped(to: target)
     }
