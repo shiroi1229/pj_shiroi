@@ -6,13 +6,14 @@ import UIKit
 struct VisiblePOCView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @State private var task: Task<Void, Never>?
-    @State private var result: VisiblePOCResult?
-    @State private var player: AVPlayer?
-    @State private var running = false
-    @State private var progress = 0.0
-    @State private var stage = "生成ボタンでGPUレンダリングを開始"
-    @State private var error: String?
+    @StateObject private var model = VisiblePOCViewModel()
+    @State private var deleteCandidate: VisiblePOCResult?
+    private var result: VisiblePOCResult? { model.result }
+    private var player: AVPlayer? { model.player }
+    private var running: Bool { model.running }
+    private var progress: Double { model.progress }
+    private var stage: String { model.stage }
+    private var error: String? { model.error }
     @State private var autoStarted = false
     private let accent = Color(red: 0.37, green: 0.91, blue: 0.86)
     private let surface = Color(red: 0.065, green: 0.095, blue: 0.14)
@@ -25,6 +26,7 @@ struct VisiblePOCView: View {
                     preview
                     controls
                     metrics
+                    history
                     scope
                 }
                 .frame(maxWidth: 1000)
@@ -42,21 +44,40 @@ struct VisiblePOCView: View {
         }
         .preferredColorScheme(.dark).tint(accent)
         .task {
+            await model.refresh()
+            let args = ProcessInfo.processInfo.arguments
+            if let index = args.firstIndex(of: "--poc-profile"), args.indices.contains(index + 1),
+               let profile = VisiblePOCProfile(rawValue: args[index + 1]) { model.profile = profile }
+            if args.contains("--poc-library-check"), let result = model.result {
+                let report: [String: Any] = ["selected_id": result.id, "history_count": model.history.count,
+                    "restored_ids": model.history.map(\.id), "render_started": false]
+                if let data = try? JSONSerialization.data(withJSONObject: report, options: .sortedKeys) {
+                    try? data.write(to: result.directory.appendingPathComponent("poc-reopened.json"), options: .atomic)
+                }
+            }
             guard autoRun, !autoStarted else { return }
             autoStarted = true
-            do { try await Task.sleep(for: .seconds(3)); start() } catch {}
+            var id: UUID?
+            if let index = args.firstIndex(of: "--poc-run"), args.indices.contains(index + 1) {
+                id = UUID(uuidString: args[index + 1])
+            }
+            do { try await Task.sleep(for: .seconds(3)); model.start(id: id) } catch {}
         }
-        .onDisappear { task?.cancel(); player?.pause(); UIApplication.shared.isIdleTimerDisabled = false }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background { task?.cancel(); player?.pause(); UIApplication.shared.isIdleTimerDisabled = false }
-        }
+        .onDisappear { model.stop() }
+        .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() } }
+        .alert("この試作動画を削除する？", isPresented: Binding(
+            get: { deleteCandidate != nil }, set: { if !$0 { deleteCandidate = nil } }
+        ), presenting: deleteCandidate) { item in
+            Button("削除", role: .destructive) { Task { await model.delete(item) } }
+            Button("残す", role: .cancel) {}
+        } message: { _ in Text("このアプリ内の動画・ポスター・レポートを削除するよ。共有済みのコピーは変更しないよ。") }
     }
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("NATIVE VIDEO ENGINE").font(.caption.monospaced()).tracking(2).foregroundStyle(accent)
                 Spacer()
-                Text("POC / 01").font(.caption.monospaced()).padding(.horizontal, 12).padding(.vertical, 6)
+                Text("POC / 02").font(.caption.monospaced()).padding(.horizontal, 12).padding(.vertical, 6)
                     .background(accent.opacity(0.12), in: Capsule()).foregroundStyle(accent)
             }
             Text("GPUで、映像をつくる。").font(.system(size: 38, weight: .bold))
@@ -80,11 +101,11 @@ struct VisiblePOCView: View {
                     }
                 }
             }
-            .aspectRatio(16 / 9, contentMode: .fit)
+            .aspectRatio(result.map { CGFloat($0.report.width) / CGFloat($0.report.height) } ?? (16.0 / 9.0), contentMode: .fit)
             HStack {
                 Label(result == nil ? "RENDER TARGET" : "LOCAL VIDEO", systemImage: "film")
                 Spacer()
-                Text("960 × 540  /  24 FPS  /  6 SEC")
+                Text("\(result?.report.width ?? model.profile.width) × \(result?.report.height ?? model.profile.height)  /  24 FPS  /  6 SEC")
             }
             .font(.caption.monospaced()).foregroundStyle(.secondary).padding(14).background(surface)
         }
@@ -93,15 +114,18 @@ struct VisiblePOCView: View {
     }
     private var controls: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Picker("出力サイズ", selection: $model.profile) {
+                ForEach(VisiblePOCProfile.allCases) { profile in Text(profile.title).tag(profile) }
+            }.pickerStyle(.segmented).disabled(running)
             HStack(spacing: 16) {
                 Button(action: start) {
                     Label(running ? "生成中…" : (result == nil ? "6秒の映像を生成" : "もう一度生成"), systemImage: "bolt.fill")
                         .font(.headline).padding(.horizontal, 16).padding(.vertical, 9)
                 }
                 .buttonStyle(.borderedProminent).disabled(running).accessibilityIdentifier("poc.generate")
-                if running { Button("中止") { task?.cancel() }.buttonStyle(.bordered) }
+                if running { Button("中止") { model.stop() }.buttonStyle(.bordered) }
                 else if let result {
-                    Button("再生", systemImage: "play.fill") { player?.seek(to: .zero); player?.play() }.buttonStyle(.bordered)
+                    Button("再生", systemImage: "play.fill") { model.replay() }.buttonStyle(.bordered)
                     ShareLink(item: result.movie) { Label("動画を保存・共有", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered)
                 }
                 Spacer(minLength: 0)
@@ -149,36 +173,36 @@ struct VisiblePOCView: View {
         .frame(maxWidth: .infinity, alignment: .leading).padding(18)
         .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
     }
-    @MainActor private func start() {
-        guard !running else { return }
-        running = true; progress = 0; result = nil; error = nil
-        player?.pause(); player = nil
-        stage = "Metalパイプラインを準備中"
-        UIApplication.shared.isIdleTimerDisabled = true
-        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("VisiblePOC/\(UUID().uuidString)", isDirectory: true)
-        task = Task {
-            defer { running = false; task = nil; UIApplication.shared.isIdleTimerDisabled = false }
-            do {
-                let generated = try await VisiblePOCRenderer().render(to: directory) { value, message in
-                    Task { @MainActor in
-                        guard running else { return }
-                        progress = value; stage = message
-                    }
-                }
-                try Task.checkCancellation()
-                result = generated; progress = 1; stage = "144フレームの保存・読み戻しに成功"
-                let newPlayer = AVPlayer(url: generated.movie)
-                player = newPlayer; newPlayer.play()
-            } catch {
-                if Task.isCancelled { stage = "中止したよ" }
-                else { self.error = error.localizedDescription; stage = "生成に失敗" }
-                try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let failure = ["status": "failed", "message": error.localizedDescription]
-                if let data = try? JSONSerialization.data(withJSONObject: failure) {
-                    try? data.write(to: directory.appendingPathComponent("poc-failure.json"), options: .atomic)
-                }
+    private var history: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("保存履歴", systemImage: "clock.arrow.circlepath").font(.headline)
+                Spacer()
+                Text("\(model.history.count) 本").font(.caption.monospaced()).foregroundStyle(accent)
             }
-        }
+            if model.history.isEmpty {
+                Text("完了した動画はここに残るよ。アプリを開き直しても選べるよ。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(model.history) { item in
+                HStack(spacing: 12) {
+                    Image(systemName: item.id == result?.id ? "checkmark.circle.fill" : "film")
+                        .foregroundStyle(accent)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(item.report.width) × \(item.report.height) / 6秒").font(.subheadline.monospaced())
+                        Text("\(item.id.prefix(8))  •  \(String(format: "%.2f MB", Double(item.report.outputBytes) / 1_000_000))")
+                            .font(.caption.monospaced()).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("開く") { model.select(item) }.buttonStyle(.bordered)
+                    ShareLink(item: item.movie) { Image(systemName: "square.and.arrow.up") }
+                    Button(role: .destructive) { deleteCandidate = item } label: { Image(systemName: "trash") }
+                        .accessibilityLabel("試作動画を削除")
+                }.disabled(running)
+            }
+            Text("成功した動画は自動で消さないよ。不要なものだけ選んで削除できるよ。")
+                .font(.caption2).foregroundStyle(.secondary)
+        }.padding(18).background(surface, in: RoundedRectangle(cornerRadius: 14))
     }
+    @MainActor private func start() { model.start() }
 }

@@ -4,42 +4,18 @@ import CoreVideo
 import Foundation
 import Metal
 
-struct VisiblePOCReport: Codable, Sendable {
-    let status: String
-    let host: String
-    let gpu: String
-    let width: Int
-    let height: Int
-    let fps: Int
-    let frames: Int
-    let decodedFrames: Int
-    let durationSeconds: Double
-    let renderAndEncodeSeconds: Double
-    let gpuCommandSeconds: Double?
-    let outputBytes: Int
-    let aiInference: Bool
-    let source: String
-}
-struct VisiblePOCResult: Sendable {
-    let directory: URL
-    let report: VisiblePOCReport
-    var movie: URL { directory.appendingPathComponent("poc-video.mov") }
-    var poster: URL { directory.appendingPathComponent("poc-poster.png") }
-    var json: URL { directory.appendingPathComponent("poc-result.json") }
-}
-
 /// Bounded native GPU/encoder POC. No model, network, or external image assets.
 /// All writer access stays on this actor. Completion markers follow decode checks.
 actor VisiblePOCRenderer {
-    static let width = 960, height = 540, fps = 24, frames = 144
     private var activeWriter: AVAssetWriter?
     private var operationID: UUID?
     private func cancelWriter(_ id: UUID) {
         if operationID == id { activeWriter?.cancelWriting() }
     }
-    func render(to directory: URL,
+    func render(to directory: URL, profile: VisiblePOCProfile = .preview,
                 progress: @escaping @Sendable (Double, String) -> Void) async throws -> VisiblePOCResult {
         guard operationID == nil else { throw POCError.failed("A render is already active.") }
+        let width = profile.width, height = profile.height, fps = profile.fps, frames = profile.frames
         let id = UUID(); operationID = id
         defer { operationID = nil; activeWriter = nil }
         try Task.checkCancellation()
@@ -65,9 +41,9 @@ actor VisiblePOCRenderer {
         }
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: Self.width, AVVideoHeightKey: Self.height,
+            AVVideoWidthKey: width, AVVideoHeightKey: height,
             AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 5_000_000,
-                AVVideoExpectedSourceFrameRateKey: Self.fps, AVVideoMaxKeyFrameIntervalKey: Self.fps]
+                AVVideoExpectedSourceFrameRateKey: fps, AVVideoMaxKeyFrameIntervalKey: fps]
         ]
         guard writer.canApply(outputSettings: settings, forMediaType: .video) else {
             throw POCError.failed("This runtime does not accept HEVC export.")
@@ -76,7 +52,7 @@ actor VisiblePOCRenderer {
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: Self.width, kCVPixelBufferHeightKey as String: Self.height,
+            kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height,
             kCVPixelBufferMetalCompatibilityKey as String: true,
             kCVPixelBufferIOSurfacePropertiesKey as String: [:]
         ])
@@ -88,7 +64,7 @@ actor VisiblePOCRenderer {
         defer { context.clearCaches() }
         let started = ProcessInfo.processInfo.systemUptime
         var gpuSeconds = 0.0, gpuTimes = 0
-        for frame in 0..<Self.frames {
+        for frame in 0..<frames {
             try Task.checkCancellation()
             let deadline = ProcessInfo.processInfo.systemUptime + 20
             while !input.isReadyForMoreMediaData {
@@ -104,18 +80,18 @@ actor VisiblePOCRenderer {
                   let pixel else { throw POCError.failed("Pixel allocation failed.") }
             var cvTexture: CVMetalTexture?
             guard CVMetalTextureCacheCreateTextureFromImage(nil, cache, pixel, nil, .bgra8Unorm,
-                    Self.width, Self.height, 0, &cvTexture) == kCVReturnSuccess,
+                    width, height, 0, &cvTexture) == kCVReturnSuccess,
                   let cvTexture, let texture = CVMetalTextureGetTexture(cvTexture),
                   let command = queue.makeCommandBuffer(), let encoder = command.makeComputeCommandEncoder() else {
                 throw POCError.failed("GPU frame resources unavailable.")
             }
             encoder.setComputePipelineState(pipeline)
             encoder.setTexture(texture, index: 0)
-            var time = Float(frame) / Float(Self.fps)
+            var time = Float(frame) / Float(fps)
             encoder.setBytes(&time, length: MemoryLayout<Float>.size, index: 0)
             let tw = pipeline.threadExecutionWidth
             let th = min(8, max(1, pipeline.maxTotalThreadsPerThreadgroup / tw))
-            encoder.dispatchThreads(MTLSize(width: Self.width, height: Self.height, depth: 1),
+            encoder.dispatchThreads(MTLSize(width: width, height: height, depth: 1),
                 threadsPerThreadgroup: MTLSize(width: tw, height: th, depth: 1))
             encoder.endEncoding()
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -132,12 +108,12 @@ actor VisiblePOCRenderer {
                     to: directory.appendingPathComponent("poc-poster.png"), format: .RGBA8,
                     colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
             }
-            guard adaptor.append(pixel, withPresentationTime: CMTime(value: Int64(frame), timescale: Int32(Self.fps))) else {
+            guard adaptor.append(pixel, withPresentationTime: CMTime(value: Int64(frame), timescale: Int32(fps))) else {
                 throw POCError.failed(writer.error?.localizedDescription ?? "Frame append failed.")
             }
-            progress(Double(frame + 1) / Double(Self.frames) * 0.95, "GPU → HEVC  \(frame + 1) / \(Self.frames)")
+            progress(Double(frame + 1) / Double(frames) * 0.95, "GPU → HEVC  \(frame + 1) / \(frames)")
         }
-        writer.endSession(atSourceTime: CMTime(value: Int64(Self.frames), timescale: Int32(Self.fps)))
+        writer.endSession(atSourceTime: CMTime(value: Int64(frames), timescale: Int32(fps)))
         input.markAsFinished()
         let timeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(30)); await self?.cancelWriter(id) } catch {}
@@ -164,12 +140,12 @@ actor VisiblePOCRenderer {
         while let sample = output.copyNextSampleBuffer() {
             try Task.checkCancellation()
             guard let buffer = CMSampleBufferGetImageBuffer(sample),
-                  CVPixelBufferGetWidth(buffer) == Self.width, CVPixelBufferGetHeight(buffer) == Self.height else {
+                  CVPixelBufferGetWidth(buffer) == width, CVPixelBufferGetHeight(buffer) == height else {
                 throw POCError.failed("Decoded frame dimensions do not match.")
             }
             decoded += 1
         }
-        guard reader.status == .completed, decoded == Self.frames, abs(duration - 6) < 0.05 else {
+        guard reader.status == .completed, decoded == frames, abs(duration - 6) < 0.05 else {
             throw POCError.failed("Decoded frame count or duration did not match.")
         }
         #if targetEnvironment(simulator)
@@ -178,9 +154,9 @@ actor VisiblePOCRenderer {
         let host = "physical iPadOS device"
         #endif
         let report = VisiblePOCReport(status: "passed", host: host, gpu: device.name,
-            width: Self.width, height: Self.height, fps: Self.fps, frames: Self.frames,
+            width: width, height: height, fps: fps, frames: frames,
             decodedFrames: decoded, durationSeconds: duration, renderAndEncodeSeconds: renderSeconds,
-            gpuCommandSeconds: gpuTimes == Self.frames ? gpuSeconds : nil,
+            gpuCommandSeconds: gpuTimes == frames ? gpuSeconds : nil,
             outputBytes: (try movie.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0,
             aiInference: false, source: "procedural Metal shader; no external assets; non-canon test scene")
         let json = JSONEncoder(); json.outputFormatting = [.prettyPrinted, .sortedKeys]
