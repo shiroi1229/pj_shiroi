@@ -10,12 +10,31 @@ actor VisiblePOCStore {
             .appendingPathComponent("VisiblePOC", isDirectory: true)
         self.root = selected.resolvingSymlinksInPath().standardizedFileURL
     }
-    /// Keep unfinished artifacts outside the list, on the same volume for rename.
+    /// A run must own a fresh directory. Reusing an old run ID is an error,
+    /// never permission to overwrite or adopt its files.
     func stage(id: UUID) throws -> URL {
-        let path = root.appendingPathComponent(".pending", isDirectory: true)
-            .appendingPathComponent(id.uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        let pending = root.appendingPathComponent(".pending", isDirectory: true)
+        let path = pending.appendingPathComponent(id.uuidString, isDirectory: true)
+        for url in [root, pending, path] { try requireUnaliased(url) }
+        let saved = root.appendingPathComponent(id.uuidString, isDirectory: true)
+        guard !itemExists(path), !itemExists(saved) else { throw StoreError.operationExists }
+        try fm.createDirectory(at: pending, withIntermediateDirectories: true)
+        for url in [root, pending] { try requireUnaliased(url) }
+        try fm.createDirectory(at: path, withIntermediateDirectories: false)
+        _ = try validatedID(path, parent: pending)
         return path
+    }
+    /// Includes dangling symbolic links, unlike fileExists(atPath:) alone.
+    private func itemExists(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
+            || (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
+    }
+    private func requireUnaliased(_ url: URL) throws {
+        guard url.isFileURL,
+              url.resolvingSymlinksInPath().path == url.standardizedFileURL.path,
+              (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true
+        else { throw StoreError.outsideLibrary }
     }
     /// Atomically publish a verified result without replacing any prior video.
     func commit(_ result: VisiblePOCResult) throws -> VisiblePOCResult {
@@ -69,15 +88,24 @@ actor VisiblePOCStore {
         }
         guard let report = try? JSONDecoder().decode(VisiblePOCReport.self, from: Data(contentsOf: json)),
               report.status == "passed", report.frames > 0, report.frames == report.decodedFrames,
-              report.width > 0, report.height > 0, report.fps > 0, report.durationSeconds.isFinite,
+              report.width > 0, report.height > 0,
+              report.width.isMultiple(of: 2), report.height.isMultiple(of: 2),
+              !report.aiInference, report.fps > 0, report.durationSeconds.isFinite,
               report.durationSeconds > 0, report.renderAndEncodeSeconds.isFinite,
               report.renderAndEncodeSeconds >= 0,
+              abs(report.durationSeconds - Double(report.frames) / Double(report.fps)) <= 0.001,
+              report.gpuCommandSeconds.map({ $0.isFinite && $0 >= 0 }) ?? true,
               report.outputBytes == (try directory.appendingPathComponent("poc-video.mov")
                   .resourceValues(forKeys: [.fileSizeKey]).fileSize) else { return nil }
         return VisiblePOCResult(directory: directory, report: report)
     }
     enum StoreError: LocalizedError {
-        case outsideLibrary, invalidResult
-        var errorDescription: String? { "この動画は保存ライブラリの有効な結果ではないよ。" }
+        case outsideLibrary, invalidResult, operationExists
+        var errorDescription: String? {
+            switch self {
+            case .operationExists: return "同じ生成IDの保存データがあるため、上書きせず中止したよ。新しい生成を開始してね。"
+            case .outsideLibrary, .invalidResult: return "この動画は保存ライブラリの有効な結果ではないよ。"
+            }
+        }
     }
 }
