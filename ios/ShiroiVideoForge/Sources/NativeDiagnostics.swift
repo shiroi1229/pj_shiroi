@@ -18,15 +18,13 @@ struct NativeDiagnosticReport: Codable, Sendable {
     let outputBytes: Int
     let aiInferenceTested: Bool
 }
-
 struct NativeDiagnosticResult: Sendable {
     let report: NativeDiagnosticReport
     let videoURL: URL
     let reportURL: URL
 }
 
-/// Tests actual Metal computation and the production video compositor.
-/// Synthetic diagnostic frames are NOT AI generated content.
+/// Native compute/export verification with synthetic fixtures; NOT AI inference.
 actor NativeDiagnostics {
     func run(directory: URL) async throws -> NativeDiagnosticResult {
         try Task.checkCancellation()
@@ -35,7 +33,7 @@ actor NativeDiagnostics {
         try Task.checkCancellation()
         let frames = try [fixture(offset: 0), fixture(offset: 64)]
         let request = GenerationRequest(prompt: "SYNTHETIC DIAGNOSTIC — NO AI INFERENCE", negativePrompt: "",
-                                        duration: 1, fps: 12, width: 256, height: 256, quality: .fast)
+            duration: 1, fps: 12, width: 256, height: 256, quality: .fast)
         let start = ProcessInfo.processInfo.systemUptime
         let result = try await MetalVideoComposer().compose(keyframes: frames, request: request,
             capabilities: DeviceCapabilities.current(), progress: { _, _ in })
@@ -52,12 +50,13 @@ actor NativeDiagnostics {
         guard reader.canAdd(output) else { throw DiagnosticError.invalidVideo }
         reader.add(output)
         guard reader.startReading() else { throw DiagnosticError.invalidVideo }
+        defer { if reader.status == .reading { reader.cancelReading() } }
         var count = 0
         while let sample = output.copyNextSampleBuffer() {
             try Task.checkCancellation()
             guard let pixel = CMSampleBufferGetImageBuffer(sample),
                   CVPixelBufferGetWidth(pixel) == 256, CVPixelBufferGetHeight(pixel) == 256 else {
-                reader.cancelReading(); throw DiagnosticError.invalidVideo
+                throw DiagnosticError.invalidVideo
             }
             count += 1
         }
@@ -99,13 +98,14 @@ actor NativeDiagnostics {
             if (i < 1048576) output[i] = input[i] * 2.0f + 1.0f;
         }
         """
-        let library = try device.makeLibrary(source: source, options: nil)
-        guard let function = library.makeFunction(name: "diagnosticAffine"),
-              let queue = device.makeCommandQueue(), let command = queue.makeCommandBuffer(),
+        let library = try await device.makeLibrary(source: source, options: nil)
+        guard let function = library.makeFunction(name: "diagnosticAffine") else { throw DiagnosticError.computeFailed }
+        let pipeline = try await device.makeComputePipelineState(function: function)
+        try Task.checkCancellation()
+        guard let queue = device.makeCommandQueue(), let command = queue.makeCommandBuffer(),
               let input = device.makeBuffer(length: 1_048_576 * 4, options: .storageModeShared),
               let output = device.makeBuffer(length: 1_048_576 * 4, options: .storageModeShared),
               let encoder = command.makeComputeCommandEncoder() else { throw DiagnosticError.computeFailed }
-        let pipeline = try device.makeComputePipelineState(function: function)
         let p = input.contents().bindMemory(to: Float.self, capacity: 1_048_576)
         for i in 0..<1_048_576 { p[i] = Float(i % 1024) / 1024 }
         encoder.setComputePipelineState(pipeline)
@@ -126,7 +126,6 @@ actor NativeDiagnostics {
         let seconds = command.gpuEndTime - command.gpuStartTime
         return seconds.isFinite && seconds > 0 ? seconds : nil
     }
-
     private func fixture(offset: CGFloat) throws -> CGImage {
         guard let context = CGContext(data: nil, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
@@ -139,7 +138,6 @@ actor NativeDiagnostics {
         guard let image = context.makeImage() else { throw DiagnosticError.invalidVideo }
         return image
     }
-
     enum DiagnosticError: LocalizedError {
         case metalUnavailable, computeFailed, invalidVideo
         var errorDescription: String? {
